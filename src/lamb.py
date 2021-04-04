@@ -34,8 +34,16 @@ class LAMB(Optimizer):
         0. weight decay and exclusion from layer adaptation like LARS. This would cause
         the optimizer to exclude all layers from layer adaptation.
     """
-    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6,
-                 weight_decay=0, exclude_from_layer_adaptation=False, amsgrad=False):
+    def __init__(
+        self,
+        params,
+        lr=1e-3,
+        betas=(0.9, 0.999),
+        eps=1e-6,
+        weight_decay=0,
+        exclude_from_layer_adaptation=False,
+        amsgrad=False
+    ):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if not 0.0 <= eps:
