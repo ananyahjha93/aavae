@@ -192,6 +192,7 @@ class VAE(pl.LightningModule):
         val_samples=1,
         weight_decay=0.01,
         log_scale=0.,
+        exclude_bn_bias=False,
         **kwargs,
     ):
         super(VAE, self).__init__()
@@ -208,6 +209,7 @@ class VAE(pl.LightningModule):
 
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
+        self.exclude_bn_bias = exclude_bn_bias
 
         self.max_epochs = max_epochs
         self.warmup_epochs = warmup_epochs
@@ -466,6 +468,7 @@ if __name__ == "__main__":
     # optimizer param
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=0.01)  # use 0.01 for LAMB
+    parser.add_argument("--exclude_bn_bias", action="store_true")
 
     parser.add_argument("--warmup_epochs", type=int, default=10)
     parser.add_argument("--max_epochs", type=int, default=800)
