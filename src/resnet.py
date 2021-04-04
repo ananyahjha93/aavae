@@ -235,6 +235,13 @@ class ResNetEncoder(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.out_dim = 512 * block.expansion
 
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -306,14 +313,16 @@ class ResNetDecoder(nn.Module):
         # interpolate after linear layer using scale factor
         self.upscale1 = Interpolate(size=input_height // self.upscale_factor)
 
-        """
-        # output 10 * num_mixtures for discretized likelihood
-        num_mixtures = 10
-        out_channels = 10 * num_mixtures
-        """
         self.conv1 = nn.Conv2d(
             64 * block.expansion, 3, kernel_size=3, stride=1, padding=1, bias=False
         )
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
     def _make_layer(self, block, planes, blocks, scale=1):
         upsample = None

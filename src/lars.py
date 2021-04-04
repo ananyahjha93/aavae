@@ -1,13 +1,13 @@
 """
 References:
     - https://arxiv.org/pdf/1708.03888.pdf
-    - https://github.com/pytorch/pytorch/blob/master/torch/optim/sgd.py
+    - https://github.com/pytorch/pytorch/blob/1.6/torch/optim/sgd.py
 """
 import torch
 from torch.optim.optimizer import Optimizer, required
 
 
-class SGDLARS(Optimizer):
+class LARS(Optimizer):
     r"""Extends SGD in PyTorch with LARS scaling from the paper
     `Large batch training of Convolutional Networks <https://arxiv.org/pdf/1708.03888.pdf>`_.
     Args:
@@ -21,7 +21,7 @@ class SGDLARS(Optimizer):
         trust_coefficient (float, optional): trust coefficient for computing LR (default: 0.001)
         eps (float, optional): eps for division denominator (default: 1e-8)
     Example:
-        >>> optimizer = lightning_ssl.optim.LARS(model.parameters(), lr=0.1, momentum=0.9)
+        >>> optimizer = LARS(model.parameters(), lr=0.1, momentum=0.9)
         >>> optimizer.zero_grad()
         >>> loss_fn(model(input), target).backward()
         >>> optimizer.step()
@@ -56,17 +56,15 @@ class SGDLARS(Optimizer):
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
 
         defaults = dict(lr=lr, momentum=momentum, dampening=dampening,
-                        weight_decay=weight_decay, nesterov=nesterov)
+                        weight_decay=weight_decay, nesterov=nesterov,
+                        trust_coefficient=trust_coefficient, eps=eps)
         if nesterov and (momentum <= 0 or dampening != 0):
             raise ValueError("Nesterov momentum requires a momentum and zero dampening")
 
-        self.eps = eps
-        self.trust_coefficient = trust_coefficient
-
-        super(SGDLARS, self).__init__(params, defaults)
+        super(LARS, self).__init__(params, defaults)
 
     def __setstate__(self, state):
-        super(SGDLARS, self).__setstate__(state)
+        super(LARS, self).__setstate__(state)
 
         for group in self.param_groups:
             group.setdefault('nesterov', False)
@@ -101,8 +99,8 @@ class SGDLARS(Optimizer):
                 # lars scaling + weight decay part
                 if weight_decay != 0:
                     if p_norm != 0 and g_norm != 0:
-                        lars_lr = p_norm / (g_norm + p_norm * weight_decay + self.eps)
-                        lars_lr *= self.trust_coefficient
+                        lars_lr = p_norm / (g_norm + p_norm * weight_decay + group['eps'])
+                        lars_lr *= group['trust_coefficient']
 
                         d_p = d_p.add(p, alpha=weight_decay)
                         d_p *= lars_lr

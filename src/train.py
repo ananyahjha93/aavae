@@ -38,6 +38,7 @@ from transforms import (
     LinearEvalValidTransform,
 )
 from online_eval import OnlineFineTuner
+from lamb import LAMB
 
 
 encoders = {"resnet18": resnet18_encoder, "resnet50": resnet50_encoder}
@@ -189,10 +190,8 @@ class VAE(pl.LightningModule):
         linear_decay=0,
         learn_scale=1,
         val_samples=1,
-        weight_decay=1e-6,
-        momentum=0.9,
+        weight_decay=0.01,
         log_scale=0.,
-        exclude_bn_bias=False,
         **kwargs,
     ):
         super(VAE, self).__init__()
@@ -208,9 +207,7 @@ class VAE(pl.LightningModule):
         self.maxpool1 = maxpool1
 
         self.learning_rate = learning_rate
-        self.momentum = momentum
         self.weight_decay = weight_decay
-        self.exclude_bn_bias = exclude_bn_bias
 
         self.max_epochs = max_epochs
         self.warmup_epochs = warmup_epochs
@@ -392,7 +389,7 @@ class VAE(pl.LightningModule):
 
         return loss
 
-    def exclude_from_wt_decay(
+    def exclude_from_wt_decay_and_layer_adaptation(
         self,
         named_params: Iterator[Tuple[str, torch.Tensor]],
         weight_decay: float,
@@ -409,16 +406,18 @@ class VAE(pl.LightningModule):
             else:
                 params.append(param)
 
-        return [{'params': params, 'weight_decay': weight_decay},
-                {'params': excluded_params, 'weight_decay': 0.}]
+        return [{'params': params, 'weight_decay': weight_decay, 'exclude_from_layer_adaptation': False},
+                {'params': excluded_params, 'weight_decay': 0., 'exclude_from_layer_adaptation': True}]
 
     def configure_optimizers(self):
         if self.exclude_bn_bias:
-            params = self.exclude_from_wt_decay(self.named_parameters(), weight_decay=self.weight_decay)
+            params = self.exclude_from_wt_decay_and_layer_adaptation(
+                self.named_parameters(), weight_decay=self.weight_decay
+            )
         else:
             params = self.parameters()
 
-        optimizer = Adam(params, lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer = LAMB(params, lr=self.learning_rate)
 
         if self.warmup_epochs < 0:
             # no lr schedule
@@ -466,9 +465,7 @@ if __name__ == "__main__":
 
     # optimizer param
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--momentum", type=float, default=0.9)
-    parser.add_argument("--weight_decay", type=float, default=1e-6)
-    parser.add_argument("--exclude_bn_bias", action="store_true")
+    parser.add_argument("--weight_decay", type=float, default=0.01)  # use 0.01 for LAMB
 
     parser.add_argument("--warmup_epochs", type=int, default=10)
     parser.add_argument("--max_epochs", type=int, default=800)
@@ -580,12 +577,8 @@ if __name__ == "__main__":
         distributed_backend="ddp" if args.gpus > 1 else None,
         precision=16 if args.fp16 else 32,
         callbacks=[online_evaluator, lr_monitor, model_checkpoint],
+        track_grad_norm=2,
+        gradient_clip_val=0.0
     )
 
     trainer.fit(model, dm)
-
-"""
-TODO:
-1. grad plotting
-2. grad clipping
-"""
