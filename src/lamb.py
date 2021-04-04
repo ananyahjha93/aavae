@@ -3,6 +3,7 @@ References:
     - https://arxiv.org/pdf/1904.00962.pdf
     - https://github.com/pytorch/pytorch/blob/1.6/torch/optim/adam.py
 """
+import math
 import torch
 from torch.optim.optimizer import Optimizer
 
