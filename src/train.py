@@ -580,8 +580,6 @@ if __name__ == "__main__":
         distributed_backend="ddp" if args.gpus > 1 else None,
         precision=16 if args.fp16 else 32,
         callbacks=[online_evaluator, lr_monitor, model_checkpoint],
-        track_grad_norm=2,
-        gradient_clip_val=0.0
     )
 
     trainer.fit(model, dm)
