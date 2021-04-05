@@ -109,6 +109,9 @@ class LAMB(Optimizer):
                 bias_correction1 = 1 - beta1 ** state['step']
                 bias_correction2 = 1 - beta2 ** state['step']
 
+                if group['weight_decay'] != 0:
+                    grad = grad.add(p.data, alpha=group['weight_decay'])
+
                 # Decay the first and second moment running average coefficient
                 exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
                 exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
@@ -122,9 +125,6 @@ class LAMB(Optimizer):
 
                 numerator = exp_avg / bias_correction1
                 update = numerator / denom
-
-                if group['weight_decay'] != 0:
-                    update = update.add(p.data, alpha=group['weight_decay'])
 
                 trust_ratio = 1.0
                 if not exclude_from_layer_adaptation:
