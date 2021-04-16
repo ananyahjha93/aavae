@@ -235,6 +235,24 @@ class ResNetEncoder(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.out_dim = 512 * block.expansion
 
+        # init in standard resnet
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+        # Zero-initialize the last BN in each residual branch,
+        # so that the residual branch starts with zeros, and each residual block behaves like an identity.
+        # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
+        if zero_init_residual:
+            for m in self.modules():
+                if isinstance(m, EncoderBottleneck):
+                    nn.init.constant_(m.bn3.weight, 0)
+                elif isinstance(m, EncoderBlock):
+                    nn.init.constant_(m.bn2.weight, 0)
+
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -314,6 +332,22 @@ class ResNetDecoder(nn.Module):
         self.conv1 = nn.Conv2d(
             64 * block.expansion, 3, kernel_size=3, stride=1, padding=1, bias=False
         )
+
+        # init in standard resnet
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+        # Zero-initialize the last BN in each residual branch,
+        if zero_init_residual:
+            for m in self.modules():
+                if isinstance(m, DecoderBottleneck):
+                    nn.init.constant_(m.bn3.weight, 0)
+                elif isinstance(m, DecoderBlock):
+                    nn.init.constant_(m.bn2.weight, 0)
 
     def _make_layer(self, block, planes, blocks, scale=1):
         upsample = None
