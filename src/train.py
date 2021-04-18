@@ -418,7 +418,7 @@ class VAE(pl.LightningModule):
         else:
             params = self.parameters()
 
-        optimizer = Adam(params, lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer = Adam(params, lr=self.learning_rate)
 
         if self.warmup_epochs < 0:
             # no lr schedule
