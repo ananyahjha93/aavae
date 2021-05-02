@@ -298,7 +298,6 @@ class VAE(pl.LightningModule):
         with torch.no_grad():
             x_original = self.encoder(original).clone().detach()
             mu_orig, log_var_orig = self.projection(x_original)
-            _, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
 
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
@@ -314,18 +313,18 @@ class VAE(pl.LightningModule):
         elbos = []
         losses = []
 
-        sampled_cos_sims = []
-        kl_imgs = []
+        cos_sims_mean_vs_sampled = []
+        cos_sims_sampled_vs_sampled = []
 
         for _ in range(samples):
             p, q, z = self.sample(mu, log_var)
             kl, log_pz, log_qz = self.kl_divergence_analytic(p, q, z)
 
-            # compute cosine sim between sampled vector and original
-            sampled_cos_sim = self.cosine_similarity(mu_orig, z)
+            with torch.no_grad():
+                _, _, z_orig = self.sample(mu_orig, log_var_orig)
 
-            # compute kl between orig img and augmented img distributions
-            kl_img = torch.distributions.kl.kl_divergence(q, q_orig).sum(dim=-1)
+            cos_sims_mean_vs_sampled.append(self.cosine_similarity(mu_orig, z))
+            cos_sims_sampled_vs_sampled.append(self.cosine_similarity(z_orig, z))
 
             x_hat = self.decoder(z)
             log_pxz = gaussian_likelihood(x_hat, self.log_scale, original)
@@ -342,9 +341,6 @@ class VAE(pl.LightningModule):
             elbos.append(elbo)
             losses.append(loss)
 
-            sampled_cos_sims.append(sampled_cos_sim)
-            kl_imgs.append(kl_img)
-
         # all of these will be of shape [batch, samples, ... ]
         log_pz = torch.stack(log_pzs, dim=1)
         log_qz = torch.stack(log_qzs, dim=1)
@@ -354,8 +350,8 @@ class VAE(pl.LightningModule):
         elbo = torch.stack(elbos, dim=1).mean()
         loss = torch.stack(losses, dim=1).mean()
 
-        sampled_cos_sim = torch.stack(sampled_cos_sims, dim=1).mean()
-        kl_img = torch.stack(kl_imgs, dim=1)
+        cos_sim_mean_vs_sampled = torch.stack(cos_sims_mean_vs_sampled, dim=1).mean()
+        cos_sim_sampled_vs_sampled = torch.stack(cos_sims_sampled_vs_sampled, dim=1).mean()
 
         # marginal likelihood, logsumexp over sample dim, mean over batch dim
         log_px = torch.logsumexp(log_pxz + log_pz - log_qz, dim=1).mean(dim=0) - np.log(
@@ -369,8 +365,8 @@ class VAE(pl.LightningModule):
             "loss": loss,
             "bpd": bpd,
             "mean_cos_sim": cos_sim,
-            "sampled_cos_sim": sampled_cos_sim,
-            "kl_img": kl_img.mean(),
+            "cos_sim_mean_vs_sampled": cos_sim_mean_vs_sampled,
+            "cos_sim_sampled_vs_sampled": cos_sim_sampled_vs_sampled,
             "log_pxz": log_pxz.mean(),
             "log_pz": log_pz.mean(),
             "log_px": log_px,
@@ -412,14 +408,7 @@ class VAE(pl.LightningModule):
                 {'params': excluded_params, 'weight_decay': 0., 'exclude_from_layer_adaptation': True}]
 
     def configure_optimizers(self):
-        if self.exclude_bn_bias:
-            params = self.exclude_from_wt_decay_and_layer_adaptation(
-                self.named_parameters(), weight_decay=self.weight_decay
-            )
-        else:
-            params = self.parameters()
-
-        optimizer = LAMB(params, lr=self.learning_rate)
+        optimizer = Adam(params, lr=self.learning_rate)  # no wt decay for Adam
 
         if self.warmup_epochs < 0:
             # no lr schedule
