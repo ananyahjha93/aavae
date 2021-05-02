@@ -408,7 +408,7 @@ class VAE(pl.LightningModule):
                 {'params': excluded_params, 'weight_decay': 0., 'exclude_from_layer_adaptation': True}]
 
     def configure_optimizers(self):
-        optimizer = Adam(params, lr=self.learning_rate)  # no wt decay for Adam
+        optimizer = Adam(self.named_parameters(), lr=self.learning_rate)  # no wt decay for Adam
 
         if self.warmup_epochs < 0:
             # no lr schedule
