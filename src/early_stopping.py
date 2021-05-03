@@ -129,7 +129,7 @@ class EarlyStopping(Callback):
             self.wait_count1 = 0
         else:
             self.wait_count1 += 1
-        
+
         if self.monitor_op2(current2 - self.min_delta2, self.best_score2):
             self.best_score2 = current2
             self.wait_count2 = 0
