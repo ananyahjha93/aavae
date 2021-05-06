@@ -7,71 +7,69 @@ from typing import Type, Any, Callable, Union, List, Optional
 
 
 class Interpolate(nn.Module):
+    """nn.Module wrapper for F.interpolate"""
 
-    def __init__(self, upscale: str = 'scale', size: Optional[int] = None):
+    def __init__(self, size=None, scale_factor=None):
         super().__init__()
-        self.upscale = upscale
-        self.size = size
-
-        if self.upscale == 'size':
-            assert self.size is not None
+        self.size, self.scale_factor = size, scale_factor
 
     def forward(self, x):
-        if self.upscale == 'scale':
-            return F.interpolate(x, scale_factor=2, mode='nearest')
-        elif self.upscale == 'size':
-            return F.interpolate(x, size=(self.size, self.size), mode='nearest')
+        return F.interpolate(x, size=self.size, scale_factor=self.scale_factor)
 
 
-def conv3x3(in_planes: int, out_planes: int, groups: int = 1) -> nn.Conv2d:
+def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(
-        in_planes, out_planes, kernel_size=3, padding=1, groups=groups, bias=False
+        in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
     )
 
 
-def conv1x1(in_planes: int, out_planes: int) -> nn.Conv2d:
+def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, bias=False)
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
-class BasicBlock(nn.Module):
-    expansion: int = 1
+def resize_conv3x3(in_planes, out_planes, scale=1):
+    """upsample + 3x3 convolution with padding to avoid checkerboard artifact"""
+    if scale == 1:
+        return conv3x3(in_planes, out_planes)
+    else:
+        return nn.Sequential(
+            Interpolate(scale_factor=scale), conv3x3(in_planes, out_planes)
+        )
 
-    def __init__(
-        self,
-        inplanes: int,
-        planes: int,
-        upsample: Optional[nn.Module] = None,
-        groups: int = 1,
-        base_width: int = 64,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
-        upscale: Optional[nn.Module] = None,
-    ) -> None:
-        super(BasicBlock, self).__init__()
 
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-        if groups != 1 or base_width != 64:
-            raise ValueError('BasicBlock only supports groups=1 and base_width=64')
+def resize_conv1x1(in_planes, out_planes, scale=1):
+    """upsample + 1x1 convolution with padding to avoid checkerboard artifact"""
+    if scale == 1:
+        return conv1x1(in_planes, out_planes)
+    else:
+        return nn.Sequential(
+            Interpolate(scale_factor=scale), conv1x1(in_planes, out_planes)
+        )
 
-        self.conv1 = conv3x3(inplanes, planes)
-        self.bn1 = norm_layer(planes)
+
+class DecoderBlock(nn.Module):
+    """
+    ResNet block, but convs replaced with resize convs, and channel increase is in
+    second conv, not first
+    """
+
+    expansion = 1
+
+    def __init__(self, inplanes, planes, scale=1, upsample=None):
+        super().__init__()
+        self.conv1 = resize_conv3x3(inplanes, inplanes)
+        self.bn1 = nn.BatchNorm2d(inplanes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = norm_layer(planes)
+        self.conv2 = resize_conv3x3(inplanes, planes, scale)
+        self.bn2 = nn.BatchNorm2d(planes)
         self.upsample = upsample
-        self.upscale = upscale
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x):
         identity = x
 
-        # if upscale is not None it will also be added to upsample
-        out = x
-        if self.upscale is not None:
-            out = self.upscale(out)
-
-        out = self.conv1(out)
+        out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
 
@@ -87,45 +85,32 @@ class BasicBlock(nn.Module):
         return out
 
 
-class Bottleneck(nn.Module):
-    expansion: int = 4
+class DecoderBottleneck(nn.Module):
+    """
+    ResNet bottleneck, but convs replaced with resize convs
+    """
 
-    def __init__(
-        self,
-        inplanes: int,
-        planes: int,
-        upsample: Optional[nn.Module] = None,
-        groups: int = 1,
-        base_width: int = 64,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
-        upscale: Optional[nn.Module] = None,
-    ) -> None:
-        super(Bottleneck, self).__init__()
+    expansion = 4
 
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-        width = int(planes * (base_width / 64.)) * groups
-
-        self.conv1 = conv1x1(inplanes, width)
-        self.bn1 = norm_layer(width)
-        self.conv2 = conv3x3(width, width, groups)
-        self.bn2 = norm_layer(width)
+    def __init__(self, inplanes, planes, scale=1, upsample=None):
+        super().__init__()
+        width = planes  # this needs to change if we want wide resnets
+        self.conv1 = resize_conv1x1(inplanes, width)
+        self.bn1 = nn.BatchNorm2d(width)
+        self.conv2 = resize_conv3x3(width, width, scale)
+        self.bn2 = nn.BatchNorm2d(width)
         self.conv3 = conv1x1(width, planes * self.expansion)
-        self.bn3 = norm_layer(planes * self.expansion)
+        self.bn3 = nn.BatchNorm2d(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
         self.upsample = upsample
-        self.upscale = upscale
+        self.scale = scale
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x):
         identity = x
 
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
-
-        # if upscale is not None it will also be added to upsample
-        if self.upscale is not None:
-            out = self.upscale(out)
 
         out = self.conv2(out)
         out = self.bn2(out)
@@ -139,188 +124,93 @@ class Bottleneck(nn.Module):
 
         out += identity
         out = self.relu(out)
-
         return out
 
 
-class Decoder(nn.Module):
+class ResNetDecoder(nn.Module):
+    """
+    Resnet in reverse order
+    """
 
     def __init__(
         self,
-        block: Type[Union[BasicBlock, Bottleneck]],
-        layers: List[int],
-        input_height: int = 32,
-        latent_dim: int = 128,
-        h_dim: int = 2048,
-        zero_init_residual: bool = False,
-        groups: int = 1,
-        widen: int = 1,
-        width_per_group: int = 512,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
-        first_conv3x3: bool = False,
-        remove_first_maxpool: bool = False,
-    ) -> None:
+        block,
+        layers,
+        latent_dim,
+        input_height,
+        first_conv3x3=True,
+        remove_first_maxpool=True
+    ):
+        super().__init__()
 
-        super(Decoder, self).__init__()
+        self.expansion = block.expansion
+        self.inplanes = 512 * block.expansion
+        self.input_height = input_height
 
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-        self._norm_layer = norm_layer
-
-        self.first_conv3x3 = first_conv3x3
-        self.remove_first_maxpool = remove_first_maxpool
         self.upscale_factor = 8
 
-        if not first_conv3x3:
+        self.linear = nn.Linear(latent_dim, self.inplanes * 4 * 4)
+
+        self.layer1 = self._make_layer(block, 256, layers[0], scale=2)
+        self.layer2 = self._make_layer(block, 128, layers[1], scale=2)
+        self.layer3 = self._make_layer(block, 64, layers[2], scale=2)
+
+        if remove_first_maxpool:
+            self.layer4 = self._make_layer(block, 64, layers[3])
+        else:
+            self.layer4 = self._make_layer(block, 64, layers[3], scale=2)
             self.upscale_factor *= 2
 
-        if not remove_first_maxpool:
+        if first_conv3x3:
+            self.upscale = Interpolate(scale_factor=1)
+        else:
+            self.upscale = Interpolate(scale_factor=2)
             self.upscale_factor *= 2
 
-        self.input_height = input_height
-        self.h_dim = h_dim
-        self.groups = groups
-        self.inplanes = h_dim
-        self.base_width = 64
-        num_out_filters = width_per_group * widen
+        # interpolate after linear layer using scale factor
+        self.upscale1 = Interpolate(size=input_height // self.upscale_factor)
 
-        self.linear_projection = nn.Linear(latent_dim, h_dim, bias=False)
-        self.bn_linear = nn.BatchNorm1d(h_dim)
-        self.relu = nn.ReLU(inplace=True)
-
-        self.conv1 = conv1x1(self.h_dim // 16, self.h_dim)
-        self.bn1 = norm_layer(self.h_dim)
-
-        num_out_filters /= 2
-        self.layer1 = self._make_layer(
-            block, int(num_out_filters), layers[0], Interpolate(
-                upscale='size', size=self.input_height // self.upscale_factor
-            )
+        self.conv1 = nn.Conv2d(
+            64 * block.expansion, 3, kernel_size=3, stride=1, padding=1, bias=False
         )
-        num_out_filters /= 2
-        self.layer2 = self._make_layer(block, int(num_out_filters), layers[1], Interpolate())
-        num_out_filters /= 2
-        self.layer3 = self._make_layer(block, int(num_out_filters), layers[2], Interpolate())
-        num_out_filters /= 2
-        self.layer4 = self._make_layer(block, int(num_out_filters), layers[3], Interpolate())
 
-        self.conv2 = conv3x3(int(num_out_filters) * block.expansion, self.base_width)
-        self.bn2 = norm_layer(self.base_width)
-        self.final_conv = conv3x3(self.base_width, 3)
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-
-        # Zero-initialize the last BN in each residual branch,
-        # so that the residual branch starts with zeros, and each residual block behaves like an identity.
-        # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
-        if zero_init_residual:
-            for m in self.modules():
-                if isinstance(m, Bottleneck):
-                    nn.init.constant_(m.bn3.weight, 0)
-                elif isinstance(m, BasicBlock):
-                    nn.init.constant_(m.bn2.weight, 0)
-
-    def _make_layer(
-        self,
-        block: Type[Union[BasicBlock, Bottleneck]],
-        planes: int,
-        blocks: int,
-        upscale: Optional[nn.Module] = None,
-    ) -> nn.Sequential:
-        norm_layer = self._norm_layer
+    def _make_layer(self, block, planes, blocks, scale=1):
         upsample = None
-
-        if self.inplanes != planes * block.expansion or upscale is not None:
-            # this is passed into residual block for skip connection
-            upsample = []
-            if upscale is not None:
-                upsample.append(upscale)
-            upsample.append(conv1x1(self.inplanes, planes * block.expansion))
-            upsample.append(norm_layer(planes * block.expansion))
-            upsample = nn.Sequential(*upsample)
+        if scale != 1 or self.inplanes != planes * block.expansion:
+            upsample = nn.Sequential(
+                resize_conv1x1(self.inplanes, planes * block.expansion, scale),
+                nn.BatchNorm2d(planes * block.expansion),
+            )
 
         layers = []
-        layers.append(
-            block(
-                self.inplanes,
-                planes,
-                upsample,
-                self.groups,
-                self.base_width,
-                norm_layer,
-                upscale,
-            )
-        )
+        layers.append(block(self.inplanes, planes, scale, upsample))
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(
-                block(
-                    self.inplanes,
-                    planes,
-                    groups=self.groups,
-                    base_width=self.base_width,
-                    norm_layer=norm_layer,
-                    upscale=None,
-                )
-            )
+            layers.append(block(self.inplanes, planes))
 
         return nn.Sequential(*layers)
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.linear_projection(x)
-        x = self.bn_linear(x)
-        x = self.relu(x)
+    def forward(self, x):
+        x = self.linear(x)
 
-        x = x.view(x.size(0), self.h_dim // 16, 4, 4)
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
+        # NOTE: replaced this by Linear(in_channels, 514 * 4 * 4)
+        # x = F.interpolate(x, scale_factor=4)
+
+        x = x.view(x.size(0), 512 * self.expansion, 4, 4)
+        x = self.upscale1(x)
 
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+        x = self.upscale(x)
 
-        if not self.remove_first_maxpool:
-            x = F.interpolate(x, scale_factor=2, mode='nearest')
-
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
-
-        if not self.first_conv3x3:
-            x = F.interpolate(x, scale_factor=2, mode='nearest')
-
-        x = self.final_conv(x)
-
+        x = self.conv1(x)
         return x
 
 
 def decoder18(**kwargs):
-    # layers list is opposite the encoder (in this case [2, 2, 2, 2])
-    return Decoder(BasicBlock, [2, 2, 2, 2], **kwargs)
-
+    return ResNetDecoder(DecoderBlock, [2, 2, 2, 2], **kwargs)
 
 def decoder50(**kwargs):
-    # layers list is opposite the encoder
-    return Decoder(Bottleneck, [3, 6, 4, 3], **kwargs)
-
-
-def decoder50w2(**kwargs):
-    # layers list is opposite the encoder
-    return Decoder(Bottleneck, [3, 6, 4, 3], widen=2, **kwargs)
-
-
-def decoder50w4(**kwargs):
-    # layers list is opposite the encoder
-    return Decoder(Bottleneck, [3, 6, 4, 3], widen=4, **kwargs)
-
-
-if __name__ == "__main__":
-    model = decoder50(input_height=96, latent_dim=128, h_dim=2048)
-    print(model)
+    return ResNetDecoder(DecoderBottleneck, [3, 4, 6, 3], **kwargs)

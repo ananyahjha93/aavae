@@ -12,8 +12,8 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 from src.models import ProjectionHeadAE
-from src.models import resnet18, resnet50, resnet50w2, resnet50w4
-from src.models import decoder18, decoder50, decoder50w2, decoder50w4
+from src.models import resnet18, resnet50
+from src.models import decoder18, decoder50
 
 from src.optimizers import LAMB, linear_warmup_decay
 from src.transforms import TrainTransform, EvalTransform
@@ -24,15 +24,11 @@ from src.datamodules import cifar10_normalization, stl10_normalization
 
 ENCODERS = {
     "resnet18": resnet18,
-    "resnet50": resnet50,
-    "resnet50w2": resnet50w2,
-    "resnet50w4": resnet50w4,
+    "resnet50": resnet50
 }
 DECODERS = {
     "resnet18": decoder18,
-    "resnet50": decoder50,
-    "resnet50w2": decoder50w2,
-    "resnet50w4": decoder50w4,
+    "resnet50": decoder50
 }
 
 
