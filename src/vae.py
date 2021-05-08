@@ -172,8 +172,8 @@ class VAE(pl.LightningModule):
 
         # get representation of original image
         with torch.no_grad():
-            x_original = self.encoder(original).clone().detach()
-            mu_orig, log_var_orig = self.projection(x_original)
+            x_orig = self.encoder(original)
+            mu_orig, log_var_orig = self.projection(x_orig)
 
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
