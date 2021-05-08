@@ -267,36 +267,8 @@ class VAE(pl.LightningModule):
 
         return loss
 
-    def exclude_from_wt_decay_and_layer_adaptation(
-        self,
-        named_params: Iterator[Tuple[str, torch.Tensor]],
-        weight_decay: float,
-        skip_list: List[str] = ['bias', 'bn'],
-    ) -> List[Dict]:
-        params = []
-        excluded_params = []
-
-        for name, param in named_params:
-            if not param.requires_grad:
-                continue
-            elif any(layer_name in name for layer_name in skip_list):
-                excluded_params.append(param)
-            else:
-                params.append(param)
-
-        return [{'params': params, 'weight_decay': weight_decay, 'exclude_from_layer_adaptation': False},
-                {'params': excluded_params, 'weight_decay': 0., 'exclude_from_layer_adaptation': True}]
-
     def configure_optimizers(self):
-        if self.exclude_bn_bias:
-            params = self.exclude_from_wt_decay(self.named_parameters(), weight_decay=self.weight_decay)
-        else:
-            params = self.parameters()
-
-        if self.optimizer == 'adam':
-            optimizer = Adam(params, lr=self.learning_rate, weight_decay=self.weight_decay)
-        elif self.optimizer == 'lamb':
-            optimizer = LAMB(params, lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer = Adam(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
 
         warmup_steps = self.train_iters_per_epoch * self.warmup_epochs
         total_steps = self.train_iters_per_epoch * self.max_epochs
@@ -346,7 +318,7 @@ if __name__ == "__main__":
     parser.add_argument("--linear_decay", type=int, default=0)
 
     # training params
-    parser.add_argument("--gpus", type=int, default=1)
+    parser.add_argument("--gpus", type=int, default=0)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--online_ft", action="store_true")
 
