@@ -138,20 +138,6 @@ class VAE(pl.LightningModule):
         return p, q, z
 
     @staticmethod
-    def kl_divergence_mc(p, q, z):
-        """
-        z is (batch, dim)
-        """
-        log_pz = p.log_prob(z)
-        log_qz = q.log_prob(z)
-
-        kl = (log_qz - log_pz).sum(dim=-1)
-        log_pz = log_pz.sum(dim=-1)
-        log_qz = log_qz.sum(dim=-1)
-
-        return kl, log_pz, log_qz
-
-    @staticmethod
     def kl_divergence_analytic(p, q, z):
         """
         z is (batch, dim)
