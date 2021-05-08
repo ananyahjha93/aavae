@@ -16,7 +16,7 @@ grid run --g_instance_type 8_v100_16gb \
          --denoising \
          --online_ft \
          --batch_size 256 \
-         -kl_coeff "[1e-3, 1e-2, 1e-1, 1, 10]" \
+         --kl_coeff "[1e-3, 1e-2, 1e-1, 1, 10]" \
          --weight_decay "[0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]" \
          --learning_rate "[1e-4, 5e-4, 1e-3]" \
          --val_samples "[1, 8, 16, 32]"
