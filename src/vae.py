@@ -194,7 +194,8 @@ class VAE(pl.LightningModule):
             with torch.no_grad():
                 _, _, z_orig = self.sample(mu_orig, log_var_orig)
 
-            cos_sims.append(self.cosine_similarity(z_orig, z))
+            # measure distance between mu_orig and the embedding
+            cos_sims.append(self.cosine_similarity(mu_orig, z))
 
             x_hat = self.decoder(z)
             log_pxz = self.gaussian_likelihood(x_hat, self.log_scale, original)
