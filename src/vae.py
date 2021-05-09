@@ -199,6 +199,8 @@ class VAE(pl.LightningModule):
         cos_sims = []
         cos_sims_z = []
         q_kls = []
+        dots = []
+        cdist = []
 
         for _ in range(samples):
             p, q, z = self.sample(mu, log_var)
@@ -207,13 +209,22 @@ class VAE(pl.LightningModule):
             with torch.no_grad():
                 p_orig, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
 
-            # cosine dists
-            cos_sims.append(self.cosine_similarity(mu_orig, z))
-            cos_sims_z.append(self.cosine_similarity(z_orig, z))
+                # cosine dists
+                cos_sims.append(self.cosine_similarity(mu_orig, z))
+                cos_sims_z.append(self.cosine_similarity(z_orig, z))
 
-            # kl between qs
-            q_kl = self.kl_divergence_analytic(q_orig, q, z_orig)
-            q_kls.append(q_kl)
+                # dot prod
+                dp = torch.bmm(mu_orig.view(batch_size, 1, -1), z.view(batch_size, -1, 1))
+                dots.append(dp)
+
+                # kl between qs
+                q_kl = self.kl_divergence_analytic(q_orig, q, z_orig)[0]
+                q_kls.append(q_kl)
+
+                # cdist (returns nxn dists between all vectors) diagonal gets the p2 norm between the same vectors
+                # in the batch
+                cd = torch.cdist(mu_orig, z).diag()
+                cdist.append(cd)
 
             x_hat = self.decoder(z)
             log_pxz = self.gaussian_likelihood(x_hat, self.log_scale, original)
@@ -239,6 +250,9 @@ class VAE(pl.LightningModule):
         loss = torch.stack(losses, dim=1).mean()
 
         cos_sim = torch.stack(cos_sims, dim=1).mean()
+        q_kl = torch.stack(q_kls, dim=1).mean()
+        dots = torch.stack(dots, dim=1).mean()
+        cdist = torch.stack(cdist, dim=1).mean()
 
         # marginal likelihood, logsumexp over sample dim, mean over batch dim
         log_px = torch.logsumexp(log_pxz + log_pz - log_qz, dim=1).mean(dim=0) - np.log(
@@ -255,6 +269,9 @@ class VAE(pl.LightningModule):
             "log_pxz": log_pxz.mean(),
             "log_pz": log_pz.mean(),
             "log_px": log_px,
+            "q_kl": q_kl,
+            "cdist_l2": cdist,
+            "dots": dots,
             "log_scale": self.log_scale.item(),
         }
 
