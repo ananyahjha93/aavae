@@ -157,7 +157,15 @@ class VAE(pl.LightningModule):
         # sum over dimensions
         return log_pxz.sum(dim=(1, 2, 3))
 
-    def step(self, batch, samples=1):
+    def save_image(self, images, name):
+        from torchvision.utils import save_image
+
+        images.shape  # torch.Size([64,3,28,28])
+        img1 = images[0]  # torch.Size([3,28,28]
+        # img1 = img1.numpy() # TypeError: tensor or list of tensors expected, got <class 'numpy.ndarray'>
+        save_image(img1, f'{name}.png')
+
+    def step(self, batch, step, samples=1):
         if self.dataset == "stl10":
             unlabeled_batch = batch[0]
             batch = unlabeled_batch
@@ -170,10 +178,13 @@ class VAE(pl.LightningModule):
         batch_size, c, h, w = x.shape
         pixels = c * h * w
 
+        # self.save_image(x, f'x_{step}')
+        # self.save_image(original, f'orig_{step}')
+
         # get representation of original image
         with torch.no_grad():
             x_orig = self.encoder(original)
-            mu_orig, log_var_orig = self.projection(x_orig)
+            mu_orig, log_var_orig = self.projection(x_orig.clone().detach())
 
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
@@ -186,16 +197,23 @@ class VAE(pl.LightningModule):
         elbos = []
         losses = []
         cos_sims = []
+        cos_sims_z = []
+        q_kls = []
 
         for _ in range(samples):
             p, q, z = self.sample(mu, log_var)
             kl, log_pz, log_qz = self.kl_divergence_analytic(p, q, z)
 
             with torch.no_grad():
-                _, _, z_orig = self.sample(mu_orig, log_var_orig)
+                p_orig, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
 
-            # measure distance between mu_orig and the embedding
+            # cosine dists
             cos_sims.append(self.cosine_similarity(mu_orig, z))
+            cos_sims_z.append(self.cosine_similarity(z_orig, z))
+
+            # kl between qs
+            q_kl = self.kl_divergence_analytic(q_orig, q, z_orig)
+            q_kls.append(q_kl)
 
             x_hat = self.decoder(z)
             log_pxz = self.gaussian_likelihood(x_hat, self.log_scale, original)
@@ -243,13 +261,13 @@ class VAE(pl.LightningModule):
         return loss, logs
 
     def training_step(self, batch, batch_idx):
-        loss, logs = self.step(batch, samples=1)
+        loss, logs = self.step(batch, 'train', samples=1)
         self.log_dict({f"train_{k}": v for k, v in logs.items()})
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, logs = self.step(batch, samples=self.val_samples)
+        loss, logs = self.step(batch, 'val', samples=self.val_samples)
         self.log_dict({f"val_{k}": v for k, v in logs.items()})
 
         return loss
@@ -317,8 +335,9 @@ if __name__ == "__main__":
 
     # transforms param
     parser.add_argument("--input_height", type=int, default=32)
-    parser.add_argument("--gaussian_blur", type=bool, default=True)
-    parser.add_argument("--jitter_strength", type=float, default=1.0)
+    parser.add_argument("--gaussian_blur", type=int, default=1)
+    parser.add_argument("--gray_scale", type=int, default=1)
+    parser.add_argument("--jitter_strength", type=float, default=0.01)
 
     args = parser.parse_args()
     pl.seed_everything(args.seed)
@@ -363,6 +382,7 @@ if __name__ == "__main__":
         dataset=args.dataset,
         gaussian_blur=args.gaussian_blur,
         jitter_strength=args.jitter_strength,
+        gray_scale=args.gray_scale,
         normalize=normalization,
         online_ft=args.online_ft,
     )
@@ -373,6 +393,7 @@ if __name__ == "__main__":
         dataset=args.dataset,
         gaussian_blur=args.gaussian_blur,
         jitter_strength=args.jitter_strength,
+        gray_scale=args.gray_scale,
         normalize=normalization,
         online_ft=args.online_ft,
     )
