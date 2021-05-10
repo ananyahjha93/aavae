@@ -412,14 +412,7 @@ class VAE(pl.LightningModule):
                 {'params': excluded_params, 'weight_decay': 0., 'exclude_from_layer_adaptation': True}]
 
     def configure_optimizers(self):
-        if self.exclude_bn_bias:
-            params = self.exclude_from_wt_decay_and_layer_adaptation(
-                self.named_parameters(), weight_decay=self.weight_decay
-            )
-        else:
-            params = self.parameters()
-
-        optimizer = LAMB(params, lr=self.learning_rate)
+        optimizer = Adam(self.parameters(), lr=self.learning_rate)
 
         if self.warmup_epochs < 0:
             # no lr schedule
@@ -460,17 +453,17 @@ if __name__ == "__main__":
     parser.add_argument('--kl_coeff', type=float, default=0.1)
     parser.add_argument("--latent_dim", type=int, default=128)
     parser.add_argument("--log_scale", type=float, default=0.)
-    parser.add_argument("--learn_scale", type=int, default=1)
+    parser.add_argument("--learn_scale", type=int, default=0)
 
     # number of samples to use for validation
     parser.add_argument("--val_samples", type=int, default=1)
 
     # optimizer param
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=0.01)  # use 0.01 for LAMB
+    parser.add_argument("--weight_decay", type=float, default=0)  # use 0.01 for LAMB
     parser.add_argument("--exclude_bn_bias", action="store_true")
 
-    parser.add_argument("--warmup_epochs", type=int, default=10)
+    parser.add_argument("--warmup_epochs", type=int, default=20)
     parser.add_argument("--max_epochs", type=int, default=800)
     parser.add_argument("--cosine_decay", type=int, default=0)
     parser.add_argument("--linear_decay", type=int, default=0)
