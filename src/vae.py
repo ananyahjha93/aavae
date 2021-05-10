@@ -354,7 +354,7 @@ if __name__ == "__main__":
     parser.add_argument("--input_height", type=int, default=32)
     parser.add_argument("--gaussian_blur", type=int, default=1)
     parser.add_argument("--gray_scale", type=int, default=1)
-    parser.add_argument("--jitter_strength", type=float, default=0.01)
+    parser.add_argument("--jitter_strength", type=float, default=1.0)
 
     args = parser.parse_args()
     pl.seed_everything(args.seed)
