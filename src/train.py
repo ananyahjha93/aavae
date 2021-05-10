@@ -558,7 +558,7 @@ if __name__ == "__main__":
     model = VAE(**args.__dict__)
 
     online_evaluator = OnlineFineTuner(
-        encoder_output_dim=model.encoder.out_dim,
+        encoder_output_dim=args.h_dim,
         num_classes=dm.num_classes,
         dataset=args.dataset,
     )
