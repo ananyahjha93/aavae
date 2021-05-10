@@ -421,7 +421,7 @@ if __name__ == "__main__":
     # TODO: add early stopping
     callbacks = [
         LearningRateMonitor(logging_interval="step"),
-        ModelCheckpoint(every_n_val_epochs=5, save_top_k=-1)
+        ModelCheckpoint(every_n_val_epochs=20, save_top_k=-1)
     ]
 
     if args.online_ft:
