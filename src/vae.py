@@ -18,8 +18,8 @@ from src.models import decoder18, decoder50
 from src.optimizers import LAMB, linear_warmup_decay
 from src.transforms import TrainTransform, EvalTransform
 from src.callbacks import OnlineFineTuner, EarlyStopping
-from src.datamodules import CIFAR10DataModule, STL10DataModule
-from src.datamodules import cifar10_normalization, stl10_normalization
+from pl_bolts.datamodules import CIFAR10DataModule, STL10DataModule
+from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, stl10_normalization
 
 
 ENCODERS = {
