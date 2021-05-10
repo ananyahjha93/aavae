@@ -24,12 +24,8 @@ from pl_bolts.transforms.dataset_normalizations import (
     imagenet_normalization,
 )
 
-from resnet import (
-    resnet18_encoder,
-    resnet18_decoder,
-    resnet50_encoder,
-    resnet50_decoder,
-)
+from resnet import resnet18, resnet50
+from decoder import decoder18, decoder50
 
 from transforms import (
     LocalTransform,
@@ -41,8 +37,8 @@ from online_eval import OnlineFineTuner
 from lamb import LAMB
 
 
-encoders = {"resnet18": resnet18_encoder, "resnet50": resnet50_encoder}
-decoders = {"resnet18": resnet18_decoder, "resnet50": resnet50_decoder}
+encoders = {"resnet18": resnet18, "resnet50": resnet50}
+decoders = {"resnet18": decoder18, "resnet50": decoder50}
 
 
 def gaussian_likelihood(mean, logscale, sample):
@@ -229,9 +225,16 @@ class VAE(pl.LightningModule):
         self.kl_coeff = kl_coeff
         self.in_channels = 3
 
-        self.encoder = encoders[encoder](self.first_conv, self.maxpool1)
+        self.encoder = encoders[encoder](
+            first_conv=self.first_conv,
+            maxpool1=self.maxpool1
+        )
         self.decoder = decoders[decoder](
-            self.latent_dim, self.input_height, self.first_conv, self.maxpool1
+            latent_dim=self.latent_dim,
+            input_height=self.input_height,
+            h_dim=self.h_dim,
+            first_conv=self.first_conv,
+            maxpool1=self.maxpool1
         )
 
         # start log-scale with a specific value
@@ -449,14 +452,14 @@ if __name__ == "__main__":
     parser.add_argument('--kl_coeff', type=float, default=0.1)
     parser.add_argument("--latent_dim", type=int, default=128)
     parser.add_argument("--log_scale", type=float, default=0.)
-    parser.add_argument("--learn_scale", type=int, default=1)
+    parser.add_argument("--learn_scale", type=int, default=0)
 
     # number of samples to use for validation
     parser.add_argument("--val_samples", type=int, default=1)
 
     # optimizer param
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=0.01)  # use 0.01 for LAMB
+    parser.add_argument("--weight_decay", type=float, default=0)  # use 0.01 for LAMB
     parser.add_argument("--exclude_bn_bias", action="store_true")
 
     parser.add_argument("--warmup_epochs", type=int, default=10)
