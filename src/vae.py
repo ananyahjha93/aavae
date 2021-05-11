@@ -425,8 +425,8 @@ if __name__ == "__main__":
         input_height=args.input_height,
         dataset=args.dataset,
         gaussian_blur=args.gaussian_blur,
-        jitter_strength=args.jitter_strength,
-        gray_scale=args.gray_scale,
+        jitter_strength=0.0,
+        gray_scale=False,
         normalize=normalization,
         online_ft=args.online_ft,
     )
