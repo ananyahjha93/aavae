@@ -220,7 +220,7 @@ class VAE(pl.LightningModule):
                 cos_sims_mu.append(self.cosine_similarity(mu_orig, mu))
 
                 # dot prod
-                dp = torch.bmm(mu_orig.view(batch_size, 1, -1), z.view(batch_size, -1, 1))
+                dp = torch.bmm(mu_orig.view(batch_size, 1, -1), z.view(batch_size, -1, 1)).squeeze(-1)
                 dots.append(dp)
 
                 # kl between qs
@@ -260,7 +260,6 @@ class VAE(pl.LightningModule):
         q_kl = torch.stack(q_kls, dim=1).mean()
         dots = torch.stack(dots, dim=1).mean()
         cdist = torch.stack(cdist, dim=1).mean()
-        dot_prod = torch.stack(dots, dim=1).mean()
 
         # marginal likelihood, logsumexp over sample dim, mean over batch dim
         log_px = torch.logsumexp(log_pxz + log_pz - log_qz, dim=1).mean(dim=0) - np.log(
@@ -281,7 +280,6 @@ class VAE(pl.LightningModule):
             "q_kl": q_kl,
             "cdist_l2": cdist,
             "dots": dots,
-            'dot_prod': dot_prod,
             "log_scale": self.log_scale.item(),
         }
 
