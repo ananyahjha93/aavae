@@ -205,8 +205,8 @@ class VAE(pl.LightningModule):
         dots = []
         cdist = []
 
-        mu = self.mu_bn(mu)
-        mu_orig = self.mu_orig_bn(mu_orig)
+        mu_bn = self.mu_bn(mu)
+        mu_orig_bn = self.mu_orig_bn(mu_orig)
 
         for idx in range(samples):
             p, q, z = self.sample(mu, log_var)
@@ -224,7 +224,7 @@ class VAE(pl.LightningModule):
                     self.logger.experiment.add_histogram(f'{step}_mu_origi_z_diff', torch.abs(mu_orig - z))
 
                 # cosine dists
-                cos_sims.append(self.cosine_similarity(mu_orig, z))
+                cos_sims.append(self.cosine_similarity(mu_orig_bn, z))
                 cos_sims_z.append(self.cosine_similarity(z_orig, z))
 
                 # dot prod
