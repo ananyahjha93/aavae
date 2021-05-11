@@ -121,6 +121,9 @@ class VAE(pl.LightningModule):
         self.log_scale = nn.Parameter(torch.Tensor([self.log_scale]))
         self.log_scale.requires_grad = bool(self.learn_scale)
 
+        self.mu_bn = nn.BatchNorm1d(latent_dim)
+        self.mu_orig_bn = nn.BatchNorm1d(latent_dim)
+
     def forward(self, x):
         return self.encoder(x)
 
@@ -201,6 +204,9 @@ class VAE(pl.LightningModule):
         q_kls = []
         dots = []
         cdist = []
+
+        mu = self.mu_bn(mu)
+        mu_orig = self.mu_orig_bn(mu_orig)
 
         for idx in range(samples):
             p, q, z = self.sample(mu, log_var)
