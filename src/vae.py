@@ -200,7 +200,7 @@ class VAE(pl.LightningModule):
         elbos = []
         losses = []
         cos_sims = []
-        cos_sims_z = []
+        cos_sims_mu = []
         q_kls = []
         dots = []
         cdist = []
@@ -217,15 +217,15 @@ class VAE(pl.LightningModule):
 
                 # look at activations over time
                 if self.global_step % 1000 == 0 and idx == 0:
-                    self.logger.experiment.add_histogram(f'{step}_z', z)
-                    self.logger.experiment.add_histogram(f'{step}_mu_orig', z)
-                    self.logger.experiment.add_histogram(f'{step}_z_orig', z_orig)
-                    self.logger.experiment.add_histogram(f'{step}_z_diff', torch.abs(z - z_orig))
-                    self.logger.experiment.add_histogram(f'{step}_mu_origi_z_diff', torch.abs(mu_orig - z))
+                    self.logger.experiment.add_histogram(f'{step}_z', z, global_step=self.global_step)
+                    self.logger.experiment.add_histogram(f'{step}_mu_orig', z, global_step=self.global_step)
+                    self.logger.experiment.add_histogram(f'{step}_z_orig', z_orig, global_step=self.global_step)
+                    self.logger.experiment.add_histogram(f'{step}_z_diff', torch.abs(z - z_orig), global_step=self.global_step)
+                    self.logger.experiment.add_histogram(f'{step}_mu_origi_z_diff', torch.abs(mu_orig - z), global_step=self.global_step)
 
                 # cosine dists
                 cos_sims.append(self.cosine_similarity(mu_orig_bn, z))
-                cos_sims_z.append(self.cosine_similarity(z_orig, z))
+                cos_sims_mu.append(self.cosine_similarity(mu_orig_bn, mu_bn))
 
                 # dot prod
                 dp = torch.bmm(mu_orig.view(batch_size, 1, -1), z.view(batch_size, -1, 1))
@@ -264,7 +264,7 @@ class VAE(pl.LightningModule):
         loss = torch.stack(losses, dim=1).mean()
 
         cos_sim = torch.stack(cos_sims, dim=1).mean()
-        cos_sims_z = torch.stack(cos_sims_z, dim=1).mean()
+        cos_sims_mu = torch.stack(cos_sims_mu, dim=1).mean()
         q_kl = torch.stack(q_kls, dim=1).mean()
         dots = torch.stack(dots, dim=1).mean()
         cdist = torch.stack(cdist, dim=1).mean()
@@ -281,7 +281,7 @@ class VAE(pl.LightningModule):
             "loss": loss,
             "bpd": bpd,
             "cos_sim": cos_sim,
-            "cos_sims_z": cos_sims_z,
+            "cos_sims_mu": cos_sims_mu,
             "log_pxz": log_pxz.mean(),
             "log_pz": log_pz.mean(),
             "log_px": log_px,
