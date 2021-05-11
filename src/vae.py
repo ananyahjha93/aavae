@@ -202,12 +202,20 @@ class VAE(pl.LightningModule):
         dots = []
         cdist = []
 
-        for _ in range(samples):
+        for idx in range(samples):
             p, q, z = self.sample(mu, log_var)
             kl, log_pz, log_qz = self.kl_divergence_analytic(p, q, z)
 
             with torch.no_grad():
                 p_orig, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
+
+                # look at activations over time
+                if self.global_step % 1000 == 0 and idx == 0:
+                    self.logger.experiment.add_histogram(f'{step}_z', z)
+                    self.logger.experiment.add_histogram(f'{step}_mu_orig', z)
+                    self.logger.experiment.add_histogram(f'{step}_z_orig', z_orig)
+                    self.logger.experiment.add_histogram(f'{step}_z_diff', torch.abs(z - z_orig))
+                    self.logger.experiment.add_histogram(f'{step}_mu_origi_z_diff', torch.abs(mu_orig, z))
 
                 # cosine dists
                 cos_sims.append(self.cosine_similarity(mu_orig, z))
@@ -250,6 +258,7 @@ class VAE(pl.LightningModule):
         loss = torch.stack(losses, dim=1).mean()
 
         cos_sim = torch.stack(cos_sims, dim=1).mean()
+        cos_sims_z = torch.stack(cos_sims_z, dim=1).mean()
         q_kl = torch.stack(q_kls, dim=1).mean()
         dots = torch.stack(dots, dim=1).mean()
         cdist = torch.stack(cdist, dim=1).mean()
@@ -266,6 +275,7 @@ class VAE(pl.LightningModule):
             "loss": loss,
             "bpd": bpd,
             "cos_sim": cos_sim,
+            "cos_sims_z": cos_sims_z,
             "log_pxz": log_pxz.mean(),
             "log_pz": log_pz.mean(),
             "log_px": log_px,
