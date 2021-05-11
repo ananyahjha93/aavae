@@ -215,14 +215,6 @@ class VAE(pl.LightningModule):
             with torch.no_grad():
                 p_orig, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
 
-                # look at activations over time
-                if self.global_step % 1000 == 0 and idx == 0:
-                    self.logger.experiment.add_histogram(f'{step}_z', z, global_step=self.global_step)
-                    self.logger.experiment.add_histogram(f'{step}_mu_orig', z, global_step=self.global_step)
-                    self.logger.experiment.add_histogram(f'{step}_z_orig', z_orig, global_step=self.global_step)
-                    self.logger.experiment.add_histogram(f'{step}_z_diff', torch.abs(z - z_orig), global_step=self.global_step)
-                    self.logger.experiment.add_histogram(f'{step}_mu_origi_z_diff', torch.abs(mu_orig - z), global_step=self.global_step)
-
                 # cosine dists
                 cos_sims.append(self.cosine_similarity(mu_orig, z))
                 cos_sims_mu.append(self.cosine_similarity(mu_orig, mu))
@@ -311,13 +303,12 @@ class VAE(pl.LightningModule):
         warmup_steps = self.train_iters_per_epoch * self.warmup_epochs
         total_steps = self.train_iters_per_epoch * self.max_epochs
 
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            linear_warmup_decay(warmup_steps, total_steps, self.cosine_decay, self.linear_decay)
+        )
         scheduler = {
-            "scheduler": torch.optim.lr_scheduler.LambdaLR(
-                optimizer,
-                linear_warmup_decay(
-                    warmup_steps, total_steps, self.cosine_decay, self.linear_decay
-                ),
-            ),
+            "scheduler": scheduler,
             "interval": "step",
             "frequency": 1,
         }
@@ -425,8 +416,8 @@ if __name__ == "__main__":
         input_height=args.input_height,
         dataset=args.dataset,
         gaussian_blur=args.gaussian_blur,
-        jitter_strength=0.0,
-        gray_scale=False,
+        jitter_strength=args.jitter_strength,
+        gray_scale=args.gray_scale,
         normalize=normalization,
         online_ft=args.online_ft,
     )
