@@ -215,7 +215,7 @@ class VAE(pl.LightningModule):
                     self.logger.experiment.add_histogram(f'{step}_mu_orig', z)
                     self.logger.experiment.add_histogram(f'{step}_z_orig', z_orig)
                     self.logger.experiment.add_histogram(f'{step}_z_diff', torch.abs(z - z_orig))
-                    self.logger.experiment.add_histogram(f'{step}_mu_origi_z_diff', torch.abs(mu_orig, z))
+                    self.logger.experiment.add_histogram(f'{step}_mu_origi_z_diff', torch.abs(mu_orig - z))
 
                 # cosine dists
                 cos_sims.append(self.cosine_similarity(mu_orig, z))
