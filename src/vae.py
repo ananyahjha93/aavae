@@ -121,6 +121,9 @@ class VAE(pl.LightningModule):
         self.log_scale = nn.Parameter(torch.Tensor([self.log_scale]))
         self.log_scale.requires_grad = bool(self.learn_scale)
 
+        self.mu_bn = nn.BatchNorm1d(latent_dim)
+        self.mu_orig_bn = nn.BatchNorm1d(latent_dim)
+
     def forward(self, x):
         return self.encoder(x)
 
@@ -136,20 +139,6 @@ class VAE(pl.LightningModule):
         z = q.rsample()
 
         return p, q, z
-
-    @staticmethod
-    def kl_divergence_mc(p, q, z):
-        """
-        z is (batch, dim)
-        """
-        log_pz = p.log_prob(z)
-        log_qz = q.log_prob(z)
-
-        kl = (log_qz - log_pz).sum(dim=-1)
-        log_pz = log_pz.sum(dim=-1)
-        log_qz = log_qz.sum(dim=-1)
-
-        return kl, log_pz, log_qz
 
     @staticmethod
     def kl_divergence_analytic(p, q, z):
@@ -171,7 +160,15 @@ class VAE(pl.LightningModule):
         # sum over dimensions
         return log_pxz.sum(dim=(1, 2, 3))
 
-    def step(self, batch, samples=1):
+    def save_image(self, images, name):
+        from torchvision.utils import save_image
+
+        images.shape  # torch.Size([64,3,28,28])
+        img1 = images[0]  # torch.Size([3,28,28]
+        # img1 = img1.numpy() # TypeError: tensor or list of tensors expected, got <class 'numpy.ndarray'>
+        save_image(img1, f'{name}.png')
+
+    def step(self, batch, step, samples=1):
         if self.dataset == "stl10":
             unlabeled_batch = batch[0]
             batch = unlabeled_batch
@@ -184,10 +181,13 @@ class VAE(pl.LightningModule):
         batch_size, c, h, w = x.shape
         pixels = c * h * w
 
+        # self.save_image(x, f'x_{step}')
+        # self.save_image(original, f'orig_{step}')
+
         # get representation of original image
         with torch.no_grad():
-            x_original = self.encoder(original).clone().detach()
-            mu_orig, log_var_orig = self.projection(x_original)
+            x_orig = self.encoder(original)
+            mu_orig, log_var_orig = self.projection(x_orig.clone().detach())
 
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
@@ -200,18 +200,37 @@ class VAE(pl.LightningModule):
         elbos = []
         losses = []
         cos_sims = []
+        cos_sims_mu = []
+        q_kls = []
         dots = []
+        cdist = []
 
-        for _ in range(samples):
+        mu = self.mu_bn(mu)
+        mu_orig = self.mu_orig_bn(mu_orig)
+
+        for idx in range(samples):
             p, q, z = self.sample(mu, log_var)
             kl, log_pz, log_qz = self.kl_divergence_analytic(p, q, z)
 
             with torch.no_grad():
-                _, _, z_orig = self.sample(mu_orig, log_var_orig)
+                p_orig, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
 
-            dot = torch.bmm(z_orig.view(batch_size, 1, -1), z.view(batch_size, -1, 1)).squeeze(-1)
-            dots.append(dot)
-            cos_sims.append(self.cosine_similarity(z_orig, z))
+                # cosine dists
+                cos_sims.append(self.cosine_similarity(mu_orig, z))
+                cos_sims_mu.append(self.cosine_similarity(mu_orig, mu))
+
+                # dot prod
+                dp = torch.bmm(mu_orig.view(batch_size, 1, -1), z.view(batch_size, -1, 1)).squeeze(-1)
+                dots.append(dp)
+
+                # kl between qs
+                q_kl = self.kl_divergence_analytic(q_orig, q, z_orig)[0]
+                q_kls.append(q_kl)
+
+                # cdist (returns nxn dists between all vectors) diagonal gets the p2 norm between the same vectors
+                # in the batch
+                cd = torch.cdist(mu_orig, z).diag()
+                cdist.append(cd)
 
             x_hat = self.decoder(z)
             log_pxz = self.gaussian_likelihood(x_hat, self.log_scale, original)
@@ -237,7 +256,10 @@ class VAE(pl.LightningModule):
         loss = torch.stack(losses, dim=1).mean()
 
         cos_sim = torch.stack(cos_sims, dim=1).mean()
-        dot_prod = torch.stack(dots, dim=1).mean()
+        cos_sims_mu = torch.stack(cos_sims_mu, dim=1).mean()
+        q_kl = torch.stack(q_kls, dim=1).mean()
+        dots = torch.stack(dots, dim=1).mean()
+        cdist = torch.stack(cdist, dim=1).mean()
 
         # marginal likelihood, logsumexp over sample dim, mean over batch dim
         log_px = torch.logsumexp(log_pxz + log_pz - log_qz, dim=1).mean(dim=0) - np.log(
@@ -251,68 +273,42 @@ class VAE(pl.LightningModule):
             "loss": loss,
             "bpd": bpd,
             "cos_sim": cos_sim,
+            "cos_sims_mu": cos_sims_mu,
             "log_pxz": log_pxz.mean(),
             "log_pz": log_pz.mean(),
             "log_px": log_px,
-            'dot_prod': dot_prod,
+            "q_kl": q_kl,
+            "cdist_l2": cdist,
+            "dots": dots,
             "log_scale": self.log_scale.item(),
         }
 
         return loss, logs
 
     def training_step(self, batch, batch_idx):
-        loss, logs = self.step(batch, samples=1)
+        loss, logs = self.step(batch, 'train', samples=1)
         self.log_dict({f"train_{k}": v for k, v in logs.items()})
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, logs = self.step(batch, samples=self.val_samples)
+        loss, logs = self.step(batch, 'val', samples=self.val_samples)
         self.log_dict({f"val_{k}": v for k, v in logs.items()})
 
         return loss
 
-    def exclude_from_wt_decay_and_layer_adaptation(
-        self,
-        named_params: Iterator[Tuple[str, torch.Tensor]],
-        weight_decay: float,
-        skip_list: List[str] = ['bias', 'bn'],
-    ) -> List[Dict]:
-        params = []
-        excluded_params = []
-
-        for name, param in named_params:
-            if not param.requires_grad:
-                continue
-            elif any(layer_name in name for layer_name in skip_list):
-                excluded_params.append(param)
-            else:
-                params.append(param)
-
-        return [{'params': params, 'weight_decay': weight_decay, 'exclude_from_layer_adaptation': False},
-                {'params': excluded_params, 'weight_decay': 0., 'exclude_from_layer_adaptation': True}]
-
     def configure_optimizers(self):
-        if self.exclude_bn_bias:
-            params = self.exclude_from_wt_decay(self.named_parameters(), weight_decay=self.weight_decay)
-        else:
-            params = self.parameters()
-
-        if self.optimizer == 'adam':
-            optimizer = Adam(params, lr=self.learning_rate, weight_decay=self.weight_decay)
-        elif self.optimizer == 'lamb':
-            optimizer = LAMB(params, lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer = Adam(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
 
         warmup_steps = self.train_iters_per_epoch * self.warmup_epochs
         total_steps = self.train_iters_per_epoch * self.max_epochs
 
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            linear_warmup_decay(warmup_steps, total_steps, self.cosine_decay, self.linear_decay)
+        )
         scheduler = {
-            "scheduler": torch.optim.lr_scheduler.LambdaLR(
-                optimizer,
-                linear_warmup_decay(
-                    warmup_steps, total_steps, self.cosine_decay, self.linear_decay
-                ),
-            ),
+            "scheduler": scheduler,
             "interval": "step",
             "frequency": 1,
         }
@@ -351,7 +347,7 @@ if __name__ == "__main__":
     parser.add_argument("--linear_decay", type=int, default=0)
 
     # training params
-    parser.add_argument("--gpus", type=int, default=1)
+    parser.add_argument("--gpus", type=int, default=0)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--online_ft", action="store_true")
 
@@ -363,7 +359,8 @@ if __name__ == "__main__":
 
     # transforms param
     parser.add_argument("--input_height", type=int, default=32)
-    parser.add_argument("--gaussian_blur", type=bool, default=True)
+    parser.add_argument("--gaussian_blur", type=int, default=1)
+    parser.add_argument("--gray_scale", type=int, default=1)
     parser.add_argument("--jitter_strength", type=float, default=1.0)
 
     args = parser.parse_args()
@@ -409,6 +406,7 @@ if __name__ == "__main__":
         dataset=args.dataset,
         gaussian_blur=args.gaussian_blur,
         jitter_strength=args.jitter_strength,
+        gray_scale=args.gray_scale,
         normalize=normalization,
         online_ft=args.online_ft,
     )
@@ -419,6 +417,7 @@ if __name__ == "__main__":
         dataset=args.dataset,
         gaussian_blur=args.gaussian_blur,
         jitter_strength=args.jitter_strength,
+        gray_scale=args.gray_scale,
         normalize=normalization,
         online_ft=args.online_ft,
     )
@@ -429,7 +428,8 @@ if __name__ == "__main__":
     # TODO: add early stopping
     callbacks = [
         LearningRateMonitor(logging_interval="step"),
-        ModelCheckpoint(save_last=True, save_top_k=1, monitor='val_cos_sim')
+        ModelCheckpoint(save_last=True, save_top_k=2, monitor='val_cos_sim', mode='max')
+        # ModelCheckpoint(every_n_val_epochs=15, save_top_k=-1)
     ]
 
     if args.online_ft:

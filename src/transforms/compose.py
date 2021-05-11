@@ -17,6 +17,7 @@ class TrainTransform:
         input_height: int = 32,
         dataset="cifar10",
         gaussian_blur: bool = True,
+        gray_scale: bool = True,
         jitter_strength: float = 1.0,
         normalize=None,
         online_ft: bool = False,
@@ -28,6 +29,7 @@ class TrainTransform:
                 input_height=input_height,
                 jitter_strength=jitter_strength,
                 gaussian_blur=gaussian_blur,
+                gray_scale=gray_scale,
                 normalize=normalize,
             )
         else:
@@ -64,6 +66,7 @@ class EvalTransform:
         input_height: int = 224,
         dataset="cifar10",
         gaussian_blur: bool = True,
+        gray_scale: bool = True,
         jitter_strength: float = 1.0,
         normalize=None,
         online_ft: bool = False,
@@ -75,6 +78,7 @@ class EvalTransform:
                 input_height=input_height,
                 jitter_strength=jitter_strength,
                 gaussian_blur=gaussian_blur,
+                gray_scale=gray_scale,
                 normalize=normalize,
             )
         else:

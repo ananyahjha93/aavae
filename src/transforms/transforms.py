@@ -7,6 +7,7 @@ class SimCLRTransform:
         self,
         input_height: int = 224,
         gaussian_blur: bool = True,
+        gray_scale: bool = True,
         jitter_strength: float = 1.0,
         normalize=None,
     ) -> None:
@@ -21,9 +22,11 @@ class SimCLRTransform:
         data_transforms = [
             transforms.RandomResizedCrop(size=input_height),
             transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomApply([self.color_jitter], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomApply([self.color_jitter], p=0.8)
         ]
+
+        if gray_scale:
+            data_transforms.append(transforms.RandomGrayscale(p=0.2))
 
         if gaussian_blur:
             kernel_size = int(0.1 * input_height)
