@@ -123,6 +123,13 @@ class VAE(pl.LightningModule):
         self.log_scale = nn.Parameter(torch.Tensor([self.log_scale]))
         self.log_scale.requires_grad = bool(self.learn_scale)
 
+    def on_after_backward(self):
+        self.logger.experiment.add_histogram('mu_wt', self.projection.mu.weight, global_step=self.trainer.global_step)
+        self.logger.experiment.add_histogram('mu_grad', self.projection.mu.weight.grad, global_step=self.trainer.global_step)
+
+        self.logger.experiment.add_histogram('logvar_wt', self.projection.logvar.weight, global_step=self.trainer.global_step)
+        self.logger.experiment.add_histogram('logvar_grad', self.projection.logvar.weight.grad, global_step=self.trainer.global_step)
+
     def on_train_start(self):
         self.logger.log_hyperparams(self.hparams)
 
@@ -197,6 +204,10 @@ class VAE(pl.LightningModule):
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
 
+        # plot
+        self.logger.experiment.add_histogram('mu', mu.clone().detach(), global_step=self.trainer.global_step)
+        self.logger.experiment.add_histogram('logvar', log_var.clone().detach(), global_step=self.trainer.global_step)
+
         log_pzs = []
         log_qzs = []
         log_pxzs = []
@@ -207,9 +218,13 @@ class VAE(pl.LightningModule):
         cos_sims = []
         kl_augmentations = []
 
+        zs = []
+
         for _ in range(samples):
             p, q, z = self.sample(mu, log_var)
             kl, log_pz, log_qz = self.kl_divergence_analytic(p, q, z)
+
+            zs.append(z.clone().detach())
 
             with torch.no_grad():
                 _, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
@@ -233,6 +248,11 @@ class VAE(pl.LightningModule):
             kls.append(kl)
             elbos.append(elbo)
             losses.append(loss)
+
+        # plots z's
+        zs = torch.stack(zs, dim=1)
+        zs = zs.view(zs.size(0) * zs.size(1), zs.size(2))
+        self.logger.experiment.add_histogram('z', zs, global_step=self.trainer.global_step)
 
         # all of these will be of shape [batch, samples, ... ]
         log_pz = torch.stack(log_pzs, dim=1)
@@ -447,6 +467,11 @@ if __name__ == "__main__":
             dataset=args.dataset
         )
         callbacks.append(online_finetuner)
+    
+    print('###############')
+    print(args.seed)
+    print('###############')
+    exit(-1)
 
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
