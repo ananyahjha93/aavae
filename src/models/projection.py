@@ -14,6 +14,10 @@ class ProjectionHeadAE(nn.Module):
             nn.Linear(hidden_dim, output_dim, bias=False)
         )
 
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+
     def forward(self, x):
         return self.projection_head(x)
 
@@ -30,6 +34,10 @@ class ProjectionHeadVAE(nn.Module):
 
         self.mu = nn.Linear(hidden_dim, output_dim, bias=False)
         self.logvar = nn.Linear(hidden_dim, output_dim, bias=False)
+
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
 
     def forward(self, x):
         x = self.first_layer(x)
