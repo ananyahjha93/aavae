@@ -313,7 +313,7 @@ class VAE(pl.LightningModule):
             "frequency": 1,
         }
 
-        return optimizer#[optimizer], [scheduler]
+        return [optimizer], [scheduler]
 
 
 if __name__ == "__main__":
