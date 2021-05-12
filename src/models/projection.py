@@ -11,7 +11,8 @@ class ProjectionHeadAE(nn.Module):
             nn.Linear(input_dim, hidden_dim, bias=True),
             nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim, bias=False)
+            nn.Linear(hidden_dim, output_dim, bias=False),
+            nn.BatchNorm1d(output_dim),
         )
 
     def forward(self, x):
@@ -29,8 +30,9 @@ class ProjectionHeadVAE(nn.Module):
         )
 
         self.mu = nn.Linear(hidden_dim, output_dim, bias=False)
+        self.mu_bn = nn.BatchNorm1d(output_dim)
         self.logvar = nn.Linear(hidden_dim, output_dim, bias=False)
 
     def forward(self, x):
         x = self.first_layer(x)
-        return self.mu(x), self.logvar(x)
+        return self.mu_bn(self.mu(x)), self.logvar(x)
