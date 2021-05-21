@@ -137,7 +137,7 @@ class VAE(pl.LightningModule):
         std = torch.exp(z_var / 2.) + eps
 
         p = torch.distributions.Normal(torch.zeros_like(z_mu), torch.ones_like(std))
-        q = torch.distributions.Normal(z_mu, std)
+        q = torch.distributions.Normal(z_mu, 1e-8)  # sample from N(mu, 0)
         z = q.rsample()
 
         return p, q, z
