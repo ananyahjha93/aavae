@@ -198,6 +198,11 @@ class VAE(pl.LightningModule):
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
 
+        # push away the distributions by maximizing the distance between all means
+        # use negative so we maximize when we minimize
+        mu_dists = mu.mm(mu.t()).triu(1).sum()
+        mu_dists = -mu_dists
+
         log_pzs = []
         log_qzs = []
         log_pxzs = []
@@ -247,6 +252,9 @@ class VAE(pl.LightningModule):
         elbo = torch.stack(elbos, dim=1).mean()
         loss = torch.stack(losses, dim=1).mean()
 
+        # push away means
+        loss += mu_dists
+
         cos_sim = torch.stack(cos_sims, dim=1).mean()
         kl_augmentation = torch.stack(kl_augmentations, dim=1).mean()
 
@@ -254,13 +262,12 @@ class VAE(pl.LightningModule):
         log_px = torch.logsumexp(log_pxz + log_pz - log_qz, dim=1).mean(dim=0) - np.log(
             samples
         )
-        bpd = -log_px / (pixels * np.log(2))  # need log_px in base 2
 
         logs = {
             "kl": kl.mean(),
             "elbo": elbo,
             "loss": loss,
-            "bpd": bpd,
+            'mu_dists': mu_dists,
             "cos_sim": cos_sim,
             "kl_augmentation": kl_augmentation,
             "log_pxz": log_pxz.mean(),
