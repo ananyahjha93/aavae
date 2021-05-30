@@ -198,9 +198,11 @@ class VAE(pl.LightningModule):
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
 
+        mu_orig_to_push, _ = self.projection(self.encoder(original))
+
         # push away the distributions by maximizing the distance between all means
         # use negative so we maximize when we minimize
-        mu_dists = mu.mm(mu.t()).triu(1).sum()
+        mu_dists = mu_orig_to_push.mm(mu_orig_to_push.t()).triu(1).sum()
         mu_dists = -mu_dists
 
         log_pzs = []
