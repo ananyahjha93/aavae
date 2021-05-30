@@ -44,7 +44,7 @@ class OnlineFineTuner(Callback):
             labeled_batch = batch[1]
             batch = labeled_batch
 
-        (_, _, finetune_view), y = batch
+        (_, _, finetune_view), y, _ = batch
         finetune_view = finetune_view.to(device)
         y = y.to(device)
 
