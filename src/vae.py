@@ -255,7 +255,7 @@ class VAE(pl.LightningModule):
         loss = torch.stack(losses, dim=1).mean()
 
         # push away means
-        loss += mu_dists
+        loss += (1e-3 * mu_dists * min(self.current_epoch / 100, 1))
 
         cos_sim = torch.stack(cos_sims, dim=1).mean()
         kl_augmentation = torch.stack(kl_augmentations, dim=1).mean()
