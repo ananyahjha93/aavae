@@ -61,6 +61,7 @@ class STL10DataModule(LightningDataModule):
         self.batch_size = batch_size
         self.seed = seed
         self.num_unlabeled_samples = 100000 - unlabeled_val_split
+        self.num_labeled_samples = 5000 - train_val_split
 
     @property
     def num_classes(self):
@@ -70,9 +71,9 @@ class STL10DataModule(LightningDataModule):
         """
         Downloads the unlabeled, train and test split
         """
-        STL10(self.data_dir, split='unlabeled', download=True, transform=transform_lib.ToTensor())
-        STL10(self.data_dir, split='train', download=True, transform=transform_lib.ToTensor())
-        STL10(self.data_dir, split='test', download=True, transform=transform_lib.ToTensor())
+        STL10(self.data_dir, split='unlabeled', download=True, transform=transforms.ToTensor())
+        STL10(self.data_dir, split='train', download=True, transform=transforms.ToTensor())
+        STL10(self.data_dir, split='test', download=True, transform=transforms.ToTensor())
 
     def train_dataloader(self):
         """
@@ -262,8 +263,8 @@ class STL10DataModule(LightningDataModule):
         return loader
 
     def _default_transforms(self):
-        data_transforms = transform_lib.Compose([
-            transform_lib.ToTensor(),
+        data_transforms = transforms.Compose([
+            transforms.ToTensor(),
             stl10_normalization()
         ])
         return data_transforms

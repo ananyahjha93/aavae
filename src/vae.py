@@ -1,4 +1,5 @@
 import torch
+import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 import argparse
@@ -66,6 +67,8 @@ class VAE(pl.LightningModule):
     ) -> None:
         super(VAE, self).__init__()
 
+        self.save_hyperparameters()
+
         self.input_height = input_height
         self.num_samples = num_samples
         self.dataset = dataset
@@ -121,6 +124,9 @@ class VAE(pl.LightningModule):
         self.log_scale = nn.Parameter(torch.Tensor([self.log_scale]))
         self.log_scale.requires_grad = bool(self.learn_scale)
 
+    def on_train_start(self):
+        self.logger.log_hyperparams(self.hparams)
+
     def forward(self, x):
         return self.encoder(x)
 
@@ -128,8 +134,8 @@ class VAE(pl.LightningModule):
         """
         z_mu and z_var is (batch, dim)
         """
-        # add ep to prevent 0 variance
-        std = torch.exp(z_var / 2) + eps
+        # add eps to prevent 0 variance
+        std = torch.exp(z_var / 2.) + eps
 
         p = torch.distributions.Normal(torch.zeros_like(z_mu), torch.ones_like(std))
         q = torch.distributions.Normal(z_mu, std)
@@ -163,8 +169,8 @@ class VAE(pl.LightningModule):
         return kl, log_pz, log_qz
 
     @staticmethod
-    def gaussian_likelihood(mean, logscale, sample):
-        scale = torch.exp(logscale)
+    def gaussian_likelihood(mean, logscale, sample, eps=1e-6):
+        scale = torch.exp(logscale / 2.) + eps
         dist = torch.distributions.Normal(mean, scale)
         log_pxz = dist.log_prob(sample)
 
@@ -200,21 +206,26 @@ class VAE(pl.LightningModule):
         elbos = []
         losses = []
         cos_sims = []
-        dots = []
+        kl_augmentations = []
 
         for _ in range(samples):
             p, q, z = self.sample(mu, log_var)
             kl, log_pz, log_qz = self.kl_divergence_analytic(p, q, z)
 
             with torch.no_grad():
-                _, _, z_orig = self.sample(mu_orig, log_var_orig)
+                _, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
 
-            dot = torch.bmm(z_orig.view(batch_size, 1, -1), z.view(batch_size, -1, 1)).squeeze(-1)
-            dots.append(dot)
+            # kl between original image and augmented image
+            kl_aug = torch.distributions.kl.kl_divergence(q, q_orig).sum(dim=-1)
+            kl_augmentations.append(kl_aug)
+
             cos_sims.append(self.cosine_similarity(z_orig, z))
 
             x_hat = self.decoder(z)
             log_pxz = self.gaussian_likelihood(x_hat, self.log_scale, original)
+
+            # plot reconstructions
+            img_grid = torchvision.utils.make_grid(x_hat)
 
             elbo = kl - log_pxz
             loss = self.kl_coeff * kl - log_pxz
@@ -237,7 +248,7 @@ class VAE(pl.LightningModule):
         loss = torch.stack(losses, dim=1).mean()
 
         cos_sim = torch.stack(cos_sims, dim=1).mean()
-        dot_prod = torch.stack(dots, dim=1).mean()
+        kl_augmentation = torch.stack(kl_augmentations, dim=1).mean()
 
         # marginal likelihood, logsumexp over sample dim, mean over batch dim
         log_px = torch.logsumexp(log_pxz + log_pz - log_qz, dim=1).mean(dim=0) - np.log(
@@ -251,24 +262,30 @@ class VAE(pl.LightningModule):
             "loss": loss,
             "bpd": bpd,
             "cos_sim": cos_sim,
+            "kl_augmentation": kl_augmentation,
             "log_pxz": log_pxz.mean(),
             "log_pz": log_pz.mean(),
             "log_px": log_px,
-            'dot_prod': dot_prod,
             "log_scale": self.log_scale.item(),
         }
 
-        return loss, logs
+        return loss, logs, img_grid
 
     def training_step(self, batch, batch_idx):
-        loss, logs = self.step(batch, samples=1)
+        loss, logs, img_grid = self.step(batch, samples=1)
         self.log_dict({f"train_{k}": v for k, v in logs.items()})
+
+        if self.global_step % 1000 == 0:
+            self.logger.experiment.add_image('train_reconstructions', img_grid, global_step=self.global_step)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, logs = self.step(batch, samples=self.val_samples)
+        loss, logs, img_grid = self.step(batch, samples=self.val_samples)
         self.log_dict({f"val_{k}": v for k, v in logs.items()})
+
+        if self.global_step % 1000 == 0:
+            self.logger.experiment.add_image('val_reconstructions', img_grid, global_step=self.global_step)
 
         return loss
 
@@ -342,7 +359,7 @@ if __name__ == "__main__":
     # optimizer param
     parser.add_argument("--optimizer", type=str, default="adam")  # adam/lamb
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=1e-6)
+    parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--exclude_bn_bias", action="store_true")
 
     parser.add_argument("--warmup_epochs", type=int, default=20)
@@ -358,6 +375,7 @@ if __name__ == "__main__":
     # datamodule params
     parser.add_argument("--data_path", type=str, default=".")
     parser.add_argument("--dataset", type=str, default="cifar10")  # cifar10, stl10
+    parser.add_argument("--num_samples", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=8)
 
@@ -368,6 +386,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     pl.seed_everything(args.seed)
+
+    # set hidden dim for resnets
+    if args.encoder_name == "resnet18":
+        args.h_dim = 512
+    elif args.encoder_name == "resnet50w2":
+        args.h_dim = 4096
+    elif args.encoder_name == "resnet50w4":
+        args.h_dim = 8192
 
     if args.dataset == "cifar10":
         dm = CIFAR10DataModule(
@@ -429,7 +455,8 @@ if __name__ == "__main__":
     # TODO: add early stopping
     callbacks = [
         LearningRateMonitor(logging_interval="step"),
-        ModelCheckpoint(save_last=True, save_top_k=1, monitor='val_cos_sim')
+        ModelCheckpoint(save_last=True, save_top_k=3, monitor='val_elbo'),
+        # ModelCheckpoint(every_n_val_epochs=20, save_top_k=-1),
     ]
 
     if args.online_ft:

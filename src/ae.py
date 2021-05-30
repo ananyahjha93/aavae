@@ -62,6 +62,8 @@ class AE(pl.LightningModule):
     ) -> None:
         super(AE, self).__init__()
 
+        self.save_hyperparameters()
+
         self.input_height = input_height
         self.num_samples = num_samples
         self.dataset = dataset
@@ -90,11 +92,11 @@ class AE(pl.LightningModule):
         )
         self.train_iters_per_epoch = self.num_samples // global_batch_size
 
-        self.encoder = encoders[self.encoder_name](
+        self.encoder = ENCODERS[self.encoder_name](
             first_conv3x3=self.first_conv3x3,
             remove_first_maxpool=self.remove_first_maxpool,
         )
-        self.decoder = decoders[self.encoder_name](
+        self.decoder = DECODERS[self.encoder_name](
             input_height=self.input_height,
             latent_dim=self.latent_dim,
             h_dim=self.h_dim,
@@ -107,6 +109,9 @@ class AE(pl.LightningModule):
         )
 
         self.cosine_similarity = nn.CosineSimilarity(dim=1, eps=1e-6)
+
+    def on_train_start(self):
+        self.logger.log_hyperparams(self.hparams)
 
     def forward(self, x):
         return self.encoder(x)
@@ -126,6 +131,7 @@ class AE(pl.LightningModule):
             h_original = self.encoder(original).clone().detach()
             z_original = self.projection(h_original)
 
+        # TODO: add val reconstructions here
         h = self.encoder(x)
         z = self.projection(h)
         x_hat = self.decoder(z)
@@ -232,6 +238,7 @@ if __name__ == "__main__":
     # datamodule params
     parser.add_argument("--data_path", type=str, default=".")
     parser.add_argument("--dataset", type=str, default="cifar10")  # cifar10, stl10
+    parser.add_argument("--num_samples", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=8)
 
@@ -243,9 +250,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
     pl.seed_everything(args.seed)
 
-    # set hidden dim for resnet18
-    if args.encoder == "resnet18":
+    # set hidden dim for resnets
+    if args.encoder_name == "resnet18":
         args.h_dim = 512
+    elif args.encoder_name == "resnet50w2":
+        args.h_dim = 4096
+    elif args.encoder_name == "resnet50w4":
+        args.h_dim = 8192
 
     if args.dataset == "cifar10":
         dm = CIFAR10DataModule(
@@ -307,7 +318,8 @@ if __name__ == "__main__":
     # TODO: add early stopping
     callbacks = [
         LearningRateMonitor(logging_interval="step"),
-        ModelCheckpoint(save_last=True, save_top_k=1, monitor='val_cos_sim')
+        ModelCheckpoint(save_last=True, save_top_k=3, monitor='val_cos_sim', mode='max'),
+        # ModelCheckpoint(every_n_val_epochs=20, save_top_k=-1),
     ]
 
     if args.online_ft:
