@@ -363,11 +363,11 @@ if __name__ == "__main__":
     parser.add_argument('--kl_coeff', type=float, default=0.1)
     parser.add_argument("--log_scale", type=float, default=0.)
     parser.add_argument("--learn_scale", type=int, default=0)  # default keep fixed log-scale
-    parser.add_argument("--val_samples", type=int, default=1)
+    parser.add_argument("--val_samples", type=int, default=16)
 
     # optimizer param
     parser.add_argument("--optimizer", type=str, default="adam")  # adam/lamb
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--exclude_bn_bias", action="store_true")
 
