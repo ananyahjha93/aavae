@@ -104,6 +104,7 @@ class VAE(pl.LightningModule):
         self.train_iters_per_epoch = self.num_samples // global_batch_size
 
         self.anchors = torch.rand((num_anchor_vectors, self.latent_dim))
+        # self.anchors = torch.distributions.uniform.Uniform(-100, 100).sample([num_anchor_vectors, self.latent_dim])
 
         self.encoder = ENCODERS[self.encoder_name](
             first_conv3x3=self.first_conv3x3,
