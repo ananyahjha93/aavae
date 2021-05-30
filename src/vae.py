@@ -130,14 +130,15 @@ class VAE(pl.LightningModule):
     def forward(self, x):
         return self.encoder(x)
 
-    def sample(self, z_mu, z_var, eps=1e-6):
+    def sample(self, z_mu, z_var, mu_orig, log_var_orig, eps=1e-6):
         """
         z_mu and z_var is (batch, dim)
         """
         # add eps to prevent 0 variance
         std = torch.exp(z_var / 2.) + eps
+        std_orig = torch.exp(log_var_orig / 2.) + eps
 
-        p = torch.distributions.Normal(torch.zeros_like(z_mu), torch.ones_like(std))
+        p = torch.distributions.Normal(mu_orig, std_orig)
         q = torch.distributions.Normal(z_mu, std)
         z = q.rsample()
 
@@ -191,9 +192,8 @@ class VAE(pl.LightningModule):
         pixels = c * h * w
 
         # get representation of original image
-        with torch.no_grad():
-            x_original = self.encoder(original).clone().detach()
-            mu_orig, log_var_orig = self.projection(x_original)
+        x_original = self.encoder(original)
+        mu_orig, log_var_orig = self.projection(x_original)
 
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
@@ -205,21 +205,11 @@ class VAE(pl.LightningModule):
         kls = []
         elbos = []
         losses = []
-        cos_sims = []
-        kl_augmentations = []
 
         for _ in range(samples):
-            p, q, z = self.sample(mu, log_var)
+            p, q, z = self.sample(mu, log_var, mu_orig, log_var_orig)
+
             kl, log_pz, log_qz = self.kl_divergence_analytic(p, q, z)
-
-            with torch.no_grad():
-                _, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
-
-            # kl between original image and augmented image
-            kl_aug = torch.distributions.kl.kl_divergence(q, q_orig).sum(dim=-1)
-            kl_augmentations.append(kl_aug)
-
-            cos_sims.append(self.cosine_similarity(z_orig, z))
 
             x_hat = self.decoder(z)
             log_pxz = self.gaussian_likelihood(x_hat, self.log_scale, original)
@@ -247,9 +237,6 @@ class VAE(pl.LightningModule):
         elbo = torch.stack(elbos, dim=1).mean()
         loss = torch.stack(losses, dim=1).mean()
 
-        cos_sim = torch.stack(cos_sims, dim=1).mean()
-        kl_augmentation = torch.stack(kl_augmentations, dim=1).mean()
-
         # marginal likelihood, logsumexp over sample dim, mean over batch dim
         log_px = torch.logsumexp(log_pxz + log_pz - log_qz, dim=1).mean(dim=0) - np.log(
             samples
@@ -261,8 +248,6 @@ class VAE(pl.LightningModule):
             "elbo": elbo,
             "loss": loss,
             "bpd": bpd,
-            "cos_sim": cos_sim,
-            "kl_augmentation": kl_augmentation,
             "log_pxz": log_pxz.mean(),
             "log_pz": log_pz.mean(),
             "log_px": log_px,
