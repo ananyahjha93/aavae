@@ -21,7 +21,7 @@ from src.transforms import TrainTransform, EvalTransform
 from src.callbacks import OnlineFineTuner, EarlyStopping
 from src.datamodules import CIFAR10DataModule, STL10DataModule
 from src.datamodules import cifar10_normalization, stl10_normalization
-
+from torchmetrics.functional import embedding_similarity
 
 ENCODERS = {
     "resnet18": resnet18,
@@ -202,8 +202,7 @@ class VAE(pl.LightningModule):
 
         # push away the distributions by maximizing the distance between all means
         # use negative so we maximize when we minimize
-        mu_dists = mu_orig_to_push.mm(mu_orig_to_push.t()).triu(1).sum()
-        mu_dists = -mu_dists
+        mu_dists = embedding_similarity(mu_orig).triu(1).sum()
 
         log_pzs = []
         log_qzs = []
@@ -255,7 +254,7 @@ class VAE(pl.LightningModule):
         loss = torch.stack(losses, dim=1).mean()
 
         # push away means
-        loss += (1e-3 * mu_dists * min(self.current_epoch / 100, 1))
+        loss += mu_dists
 
         cos_sim = torch.stack(cos_sims, dim=1).mean()
         kl_augmentation = torch.stack(kl_augmentations, dim=1).mean()
