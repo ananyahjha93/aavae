@@ -63,6 +63,7 @@ class VAE(pl.LightningModule):
         weight_decay,
         exclude_bn_bias,
         online_ft,
+        num_anchor_vectors,
         **kwargs,
     ) -> None:
         super(VAE, self).__init__()
@@ -102,6 +103,8 @@ class VAE(pl.LightningModule):
         )
         self.train_iters_per_epoch = self.num_samples // global_batch_size
 
+        self.anchors = torch.rand((num_anchor_vectors, self.latent_dim))
+
         self.encoder = ENCODERS[self.encoder_name](
             first_conv3x3=self.first_conv3x3,
             remove_first_maxpool=self.remove_first_maxpool,
@@ -130,14 +133,14 @@ class VAE(pl.LightningModule):
     def forward(self, x):
         return self.encoder(x)
 
-    def sample(self, z_mu, z_var, eps=1e-6):
+    def sample(self, z_mu, z_var, mu_prior_anchors, eps=1e-6):
         """
         z_mu and z_var is (batch, dim)
         """
         # add eps to prevent 0 variance
         std = torch.exp(z_var / 2.) + eps
 
-        p = torch.distributions.Normal(torch.zeros_like(z_mu), torch.ones_like(std))
+        p = torch.distributions.Normal(mu_prior_anchors, torch.ones_like(std))
         q = torch.distributions.Normal(z_mu, std)
         z = q.rsample()
 
@@ -183,9 +186,9 @@ class VAE(pl.LightningModule):
             batch = unlabeled_batch
 
         if self.online_ft:
-            (x, original, _), y = batch
+            (x, original, _), y, idxs = batch
         else:
-            (x, original), y = batch
+            (x, original), y, idxs = batch
 
         batch_size, c, h, w = x.shape
         pixels = c * h * w
@@ -194,6 +197,8 @@ class VAE(pl.LightningModule):
         with torch.no_grad():
             x_original = self.encoder(original).clone().detach()
             mu_orig, log_var_orig = self.projection(x_original)
+
+        mu_prior_anchors = self.anchors[idxs]
 
         x_enc = self.encoder(x)
         mu, log_var = self.projection(x_enc)
@@ -209,11 +214,11 @@ class VAE(pl.LightningModule):
         kl_augmentations = []
 
         for _ in range(samples):
-            p, q, z = self.sample(mu, log_var)
+            p, q, z = self.sample(mu, log_var, mu_prior_anchors)
             kl, log_pz, log_qz = self.kl_divergence_analytic(p, q, z)
 
             with torch.no_grad():
-                _, q_orig, z_orig = self.sample(mu_orig, log_var_orig)
+                _, q_orig, z_orig = self.sample(mu_orig, log_var_orig, mu_prior_anchors)
 
             # kl between original image and augmented image
             kl_aug = torch.distributions.kl.kl_divergence(q, q_orig).sum(dim=-1)
@@ -355,6 +360,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_scale", type=float, default=0.)
     parser.add_argument("--learn_scale", type=int, default=0)  # default keep fixed log-scale
     parser.add_argument("--val_samples", type=int, default=1)
+    parser.add_argument("--num_anchor_vectors", type=int, default=1)
 
     # optimizer param
     parser.add_argument("--optimizer", type=str, default="adam")  # adam/lamb
@@ -403,6 +409,7 @@ if __name__ == "__main__":
         )
 
         args.num_samples = dm.num_samples
+        args.num_anchor_vectors = 60000
         args.input_height = dm.size()[-1]
 
         args.first_conv3x3 = True

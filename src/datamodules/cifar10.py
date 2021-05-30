@@ -3,11 +3,23 @@ from typing import Optional, Sequence
 
 import torch
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Dataset
 
 import torchvision.transforms as transforms
 from torchvision.datasets import CIFAR10
 from src.datamodules import cifar10_normalization
+
+
+class IndexedCIFAR10(Dataset):
+    def __init__(self, *args, **kwargs):
+        self.cifar10 = CIFAR10(*args, **kwargs)
+
+    def __getitem__(self, index):
+        data, target = self.cifar10[index]
+        return data, target, index
+
+    def __len__(self):
+        return len(self.cifar10)
 
 
 class CIFAR10DataModule(LightningDataModule):
@@ -35,7 +47,7 @@ class CIFAR10DataModule(LightningDataModule):
         super().__init__(*args, **kwargs)
 
         self.dims = (3, 32, 32)
-        self.DATASET = CIFAR10
+        self.DATASET = IndexedCIFAR10
         self.val_split = val_split
         self.num_workers = num_workers
         self.batch_size = batch_size
