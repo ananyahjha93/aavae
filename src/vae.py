@@ -64,6 +64,7 @@ class VAE(pl.LightningModule):
         exclude_bn_bias,
         online_ft,
         num_anchor_vectors,
+        anchor_lim,
         **kwargs,
     ) -> None:
         super(VAE, self).__init__()
@@ -97,6 +98,7 @@ class VAE(pl.LightningModule):
         self.learn_scale = learn_scale
         self.log_scale = log_scale
         self.val_samples = val_samples
+        self.anchor_lim = anchor_lim
 
         global_batch_size = (
             self.gpus * self.batch_size if self.gpus > 0 else self.batch_size
@@ -104,7 +106,7 @@ class VAE(pl.LightningModule):
         self.train_iters_per_epoch = self.num_samples // global_batch_size
 
         # self.anchors = torch.rand((num_anchor_vectors, self.latent_dim))
-        self.anchors = torch.distributions.uniform.Uniform(-100, 100).sample([num_anchor_vectors, self.latent_dim])
+        self.anchors = torch.distributions.uniform.Uniform(-self.anchor_lim, self.anchor_lim).sample([num_anchor_vectors, self.latent_dim])
         self.anchors = torch.nn.Parameter(self.anchors, requires_grad=False)
 
         self.encoder = ENCODERS[self.encoder_name](
@@ -354,6 +356,7 @@ if __name__ == "__main__":
     parser.add_argument("--encoder_name", default="resnet50", choices=ENCODERS.keys())
     parser.add_argument("--h_dim", type=int, default=2048)
     parser.add_argument("--latent_dim", type=int, default=128)
+    parser.add_argument("--anchor_lim", type=int, default=100)
     parser.add_argument("--first_conv3x3", type=bool, default=True)  # default for cifar-10
     parser.add_argument("--remove_first_maxpool", type=bool, default=True)  # default for cifar-10
 
