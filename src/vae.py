@@ -356,7 +356,7 @@ if __name__ == "__main__":
     parser.add_argument("--encoder_name", default="resnet50", choices=ENCODERS.keys())
     parser.add_argument("--h_dim", type=int, default=2048)
     parser.add_argument("--latent_dim", type=int, default=128)
-    parser.add_argument("--anchor_lim", type=int, default=100)
+    parser.add_argument("--anchor_lim", type=float, default=100)
     parser.add_argument("--first_conv3x3", type=bool, default=True)  # default for cifar-10
     parser.add_argument("--remove_first_maxpool", type=bool, default=True)  # default for cifar-10
 
