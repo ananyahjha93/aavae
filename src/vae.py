@@ -202,7 +202,7 @@ class VAE(pl.LightningModule):
 
         # push away the distributions by maximizing the distance between all means
         # use negative so we maximize when we minimize
-        mu_dists = embedding_similarity(mu_orig).triu(1).sum()
+        mu_dists = embedding_similarity(mu_orig_to_push).triu(1).sum()
 
         log_pzs = []
         log_qzs = []
