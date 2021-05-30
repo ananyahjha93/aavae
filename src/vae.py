@@ -59,6 +59,7 @@ class VAE(pl.LightningModule):
         linear_decay,
         learn_scale,
         log_scale,
+        log_var,
         val_samples,
         weight_decay,
         exclude_bn_bias,
@@ -96,6 +97,7 @@ class VAE(pl.LightningModule):
         self.learn_scale = learn_scale
         self.log_scale = log_scale
         self.val_samples = val_samples
+        self.log_var = log_var
 
         global_batch_size = (
             self.gpus * self.batch_size if self.gpus > 0 else self.batch_size
@@ -135,7 +137,7 @@ class VAE(pl.LightningModule):
         z_mu and z_var is (batch, dim)
         """
         # add eps to prevent 0 variance
-        std = torch.exp(z_var / 2.) + eps
+        std = torch.zeros_like(z_var) + self.log_var
 
         p = torch.distributions.Normal(torch.zeros_like(z_mu), torch.ones_like(std))
         q = torch.distributions.Normal(z_mu, std)
@@ -363,6 +365,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_scale", type=float, default=0.)
     parser.add_argument("--learn_scale", type=int, default=0)  # default keep fixed log-scale
     parser.add_argument("--val_samples", type=int, default=16)
+    parser.add_argument("--log_var", type=float, default=0.01)
 
     # optimizer param
     parser.add_argument("--optimizer", type=str, default="adam")  # adam/lamb
