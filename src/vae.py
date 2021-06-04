@@ -46,6 +46,7 @@ class VAE(pl.LightningModule):
         num_samples,
         gpus,
         batch_size,
+        recon_coeff,
         kl_coeff,
         h_dim,
         latent_dim,
@@ -97,6 +98,7 @@ class VAE(pl.LightningModule):
         self.remove_first_maxpool = remove_first_maxpool
 
         self.kl_coeff = kl_coeff
+        self.recon_coeff = recon_coeff
         self.learn_scale = learn_scale
         self.log_scale = log_scale
         self.val_samples = val_samples
@@ -232,7 +234,7 @@ class VAE(pl.LightningModule):
             # img_grid = torchvision.utils.make_grid(x_hat)
 
             elbo = kl - log_pxz
-            loss = self.kl_coeff * kl - log_pxz
+            loss = self.kl_coeff * kl - self.recon_coeff * log_pxz
 
             log_pzs.append(log_pz)
             log_qzs.append(log_qz)
@@ -361,6 +363,7 @@ if __name__ == "__main__":
 
     # vae params
     parser.add_argument('--kl_coeff', type=float, default=0.1)
+    parser.add_argument('--recon_coeff', type=float, default=1.)
     parser.add_argument("--log_scale", type=float, default=0.)
     parser.add_argument("--learn_scale", type=int, default=0)  # default keep fixed log-scale
     parser.add_argument("--val_samples", type=int, default=1)

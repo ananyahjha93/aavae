@@ -1,12 +1,24 @@
 #!/bin/sh
 
-# can set min, max and n
-LOG_SCALE=$(awk -v n=8 -v min=-5 -v max=2 -v seed="$RANDOM" 'BEGIN { srand(seed); for (i=0; i<n; ++i) print rand() * (max - min) + min }')
-LOG_SCALE=($(echo ${LOG_SCALE=[*]}| tr " " "\n" | sort -n))
-LR=1e-4
-KL=1e-3
+RECON_COEFF=0
+LR=2.5e-4
+KL=0.1
+WARMUP_EPOCHS=10
 
-for i in {0..7}; do
-    screen -dmS "run$i" bash -c "source /home/ananya/env/bin/activate; python setup.py install; CUDA_VISIBLE_DEVICES=$i python src/vae.py --seed $(date +%s) --online_ft --gpus 1 --max_epochs 4000 --batch_size 256 --warmup_epochs 10 --val_samples 16 --weight_decay 0 --learning_rate $LR --kl_coeff $KL --log_scale ${LOG_SCALE[$i]}; exec sh"
-    sleep 5
-done
+screen -dmS "recon0" bash -c "source /home/ananya/env/bin/activate; python setup.py install; CUDA_VISIBLE_DEVICES=0 python src/vae.py --seed $(date +%s) --denoising --online_ft --gpus 1 --max_epochs 3200 --batch_size 256 --val_samples 16 --weight_decay 0 --log_scale 0 --learning_rate $LR --warmup_epochs $WARMUP_EPOCHS --kl_coeff $KL --recon_coeff $RECON_COEFF; exec sh"
+sleep 5
+
+RECON_COEFF=0.2
+LR=2.5e-4
+KL=0.1
+WARMUP_EPOCHS=10
+
+screen -dmS "recon1" bash -c "source /home/ananya/env/bin/activate; python setup.py install; CUDA_VISIBLE_DEVICES=1 python src/vae.py --seed $(date +%s) --denoising --online_ft --gpus 1 --max_epochs 3200 --batch_size 256 --val_samples 16 --weight_decay 0 --log_scale 0 --learning_rate $LR --warmup_epochs $WARMUP_EPOCHS --kl_coeff $KL --recon_coeff $RECON_COEFF; exec sh"
+sleep 5
+
+RECON_COEFF=0.4
+LR=2.5e-4
+KL=0.1
+WARMUP_EPOCHS=10
+
+screen -dmS "recon2" bash -c "source /home/ananya/env/bin/activate; python setup.py install; CUDA_VISIBLE_DEVICES=4 python src/vae.py --seed $(date +%s) --denoising --online_ft --gpus 1 --max_epochs 3200 --batch_size 256 --val_samples 16 --weight_decay 0 --log_scale 0 --learning_rate $LR --warmup_epochs $WARMUP_EPOCHS --kl_coeff $KL --recon_coeff $RECON_COEFF; exec sh"
