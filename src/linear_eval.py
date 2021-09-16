@@ -12,8 +12,8 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from src.optimizers import linear_warmup_decay
 from src.models import resnet18, resnet50, resnet50w2, resnet50w4
 
-from src.datamodules import CIFAR10DataModule, STL10DataModule
-from src.datamodules import cifar10_normalization, stl10_normalization
+from src.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDataModule
+from src.datamodules import cifar10_normalization, stl10_normalization, imagenet_normalization
 
 from typing import Union, List, Optional, Sequence, Dict, Iterator, Tuple
 
@@ -229,6 +229,33 @@ if __name__ == "__main__":
         eval_transforms = transforms.Compose([
             transforms.Resize(int(args.input_height * 1.1)),
             transforms.CenterCrop(args.input_height),
+            transforms.ToTensor(),
+            normalization
+        ])
+    elif args.dataset == "imagenet":
+        dm = ImagenetDataModule(
+            data_dir=args.data_path,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+        )
+
+        args.num_samples = dm.num_samples
+        args.input_height = dm.size()[-1]
+
+        args.first_conv3x3 = False # first conv is 7x7 for imagenet
+        args.remove_first_maxpool = False # don't remove first maxpool
+        normalization = imagenet_normalization()
+
+        train_transforms = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalization
+        ])
+
+        eval_transforms = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalization
         ])
