@@ -296,6 +296,7 @@ if __name__ == "__main__":
         gpus=args.gpus,
         distributed_backend="ddp" if args.gpus > 1 else None,
         precision=16,
+        sync_batchnorm=True,
         callbacks=[LearningRateMonitor(logging_interval="step")]
     )
 
