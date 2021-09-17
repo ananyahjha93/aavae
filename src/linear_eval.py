@@ -148,7 +148,6 @@ if __name__ == "__main__":
 
     # eval params
     parser.add_argument('--dataset', type=str, help='cifar10, stl10', default='cifar10')
-    parser.add_argument('--num_classes', type=int, default=10, help="number of classes in classification dataset")
     parser.add_argument("--num_samples", type=int, default=1)
     parser.add_argument("--input_height", type=int, default=32)
     parser.add_argument('--ckpt_path', type=str, help='path to ckpt')
@@ -281,7 +280,7 @@ if __name__ == "__main__":
     linear_eval = LinearEvaluation(
         encoder=encoder,
         encoder_output_dim=args.encoder_output_dim,
-        num_classes=args.num_classes,
+        num_classes=dm.num_classes,
         num_samples=args.num_samples,
         batch_size=args.batch_size,
         gpus=args.gpus,
