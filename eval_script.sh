@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0,1,2,3 python src/linear_eval.py --dataset imagenet --data_path /home/ananya/imagenet/data/imagenet_2012 --seed $(date +%s) --ckpt_path /home/ananya/run_imagenet/aavae/lightning_logs/version_6/checkpoints/epoch=2099-step=5048399.ckpt --batch_size 64 --num_workers 6 --gpus 4
