@@ -1,0 +1,3 @@
+CUDA_VISIBLE_DEVICES=4,5,6,7 python src/linear_eval_semi.py --data_path /home/ananya/imagenet/data/imagenet_2012 --seed $(date +%s) --ckpt_path /home/ananya/run_imagenet/aavae/lightning_logs/version_6/checkpoints/epoch=2099-step=5048399.ckpt --batch_size 64 --num_workers 6 --gpus 4 --labels_percentage 10 --learning_rate 0.01 --learning_rate_last_layer 0.2
+
+# CUDA_VISIBLE_DEVICES=4,5,6,7 python src/linear_eval_semi.py --data_path /home/ananya/imagenet/data/imagenet_2012 --seed $(date +%s) --ckpt_path /home/ananya/run_imagenet/aavae/lightning_logs/version_6/checkpoints/epoch=2099-step=5048399.ckpt --batch_size 64 --num_workers 6 --gpus 4 --labels_percentage 1 --learning_rate 0.02 --learning_rate_last_layer 0.5

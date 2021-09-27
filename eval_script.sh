@@ -1,7 +1,1 @@
-#!/bin/sh
-
-# TODO: add ckpt path
-for i in {0..7}; do
-    screen -dmS "run$i" bash -c "source /home/ananya/env/bin/activate; python setup.py install; CUDA_VISIBLE_DEVICES=$i python src/linear_eval.py --ckpt_path lightning_logs/version_'$i'/checkpoints/last.ckpt; exec sh"
-    sleep 5
-done
+CUDA_VISIBLE_DEVICES=0,1,2,3 python src/linear_eval.py --dataset imagenet --data_path /home/ananya/imagenet/data/imagenet_2012 --seed $(date +%s) --ckpt_path /home/ananya/run_imagenet/aavae/lightning_logs/version_6/checkpoints/epoch=2099-step=5048399.ckpt --batch_size 64 --num_workers 6 --gpus 4
