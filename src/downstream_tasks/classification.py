@@ -12,8 +12,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from src.optimizers import linear_warmup_decay
 from src.models import resnet18, resnet50, resnet50w2, resnet50w4
 
-from src.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDataModule
-from src.datamodules import cifar10_normalization, stl10_normalization, imagenet_normalization
+from places205 import Places205, places205_normalization
 
 from typing import Union, List, Optional, Sequence, Dict, Iterator, Tuple
 
@@ -33,15 +32,9 @@ class DownstreamClassificationEval(pl.LightningModule):
         encoder: nn.Module,
         encoder_output_dim: int,
         num_classes: int,
-        num_samples: int,
-        batch_size: int,
-        gpus: int,
         max_epochs: int,
         learning_rate: float,
         milestones: list,
-        weight_decay: float,
-        nesterov: bool,
-        momentum: float,
     ) -> None:
 
         super().__init__()
@@ -50,21 +43,9 @@ class DownstreamClassificationEval(pl.LightningModule):
         self.encoder = encoder
         self.linear_layer = nn.Linear(encoder_output_dim, num_classes)
 
-        self.batch_size = batch_size
-        self.num_samples = num_samples
-        self.gpus = gpus
-
         self.max_epochs = max_epochs
         self.learning_rate = learning_rate
         self.milestones = milestones
-        self.weight_decay = weight_decay
-        self.nesterov = nesterov
-        self.momentum = momentum
-
-        global_batch_size = (
-            self.gpus * self.batch_size if self.gpus > 0 else self.batch_size
-        )
-        self.train_iters_per_epoch = self.num_samples // global_batch_size
 
         # metrics
         self.train_acc = Accuracy()
@@ -75,19 +56,20 @@ class DownstreamClassificationEval(pl.LightningModule):
         self.encoder.eval()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(
-            self.linear_layer.parameters(),
-            lr=self.learning_rate,
-            nesterov=self.nesterov,
-            momentum=self.momentum,
-            weight_decay=self.weight_decay,
-        )
+        # optimizer = torch.optim.SGD(
+        #     self.linear_layer.parameters(),
+        #     lr=self.learning_rate,
+        #     momentum=0.9,
+        #     weight_decay=5e-4,
+        # )
 
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer, milestones=self.milestones, gamma=0.1
-        )
+        # scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        #     optimizer, milestones=self.milestones, gamma=0.1
+        # )
 
-        return [optimizer], [scheduler]
+        # return [optimizer], [scheduler]
+        optimizer = torch.optim.Adam(self.linear_layer.parameters(), lr=1e-4)
+        return optimizer
 
     def shared_step(self, batch):
         x, y = batch
@@ -142,9 +124,7 @@ if __name__ == "__main__":
     parser.add_argument("--remove_first_maxpool", type=bool, default=True)  # default for cifar-10
 
     # eval params
-    parser.add_argument('--dataset', type=str, help='voc07, inat18, places205', default='voc07')
-    parser.add_argument("--num_samples", type=int, default=1)
-    parser.add_argument("--input_height", type=int, default=32)
+    parser.add_argument('--dataset', type=str, help='inat18, places205', default='places205')
     parser.add_argument('--ckpt_path', type=str, help='path to ckpt')
     parser.add_argument("--data_path", type=str, default=".")
 
@@ -154,15 +134,10 @@ if __name__ == "__main__":
     parser.add_argument('--max_epochs', default=90, type=int, help="number of epochs")
 
     # fine-tuner params
-    parser.add_argument('--learning_rate', type=float, default=0.1)
-    parser.add_argument('--weight_decay', type=float, default=0)
-    parser.add_argument('--nesterov', type=bool, default=True)
-    parser.add_argument('--momentum', type=float, default=0.9)
+    parser.add_argument('--learning_rate', type=float, default=0.01)
 
     args = parser.parse_args()
     pl.seed_everything(args.seed)
-
-    args.learning_rate = 0.1 * int(args.batch_size * args.gpus / 256)
 
     # set hidden dim for resnet18
     if args.encoder_name == "resnet18":
@@ -172,93 +147,46 @@ if __name__ == "__main__":
     train_transforms = None
     eval_transforms = None
 
-    if args.dataset == 'cifar10':
-        dm = CIFAR10DataModule(
-            data_dir=args.data_path,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-        )
+    if args.dataset == 'places205':
+        args.max_epochs = 14
+        args.milestones = [5, 10]
 
-        args.num_samples = dm.num_samples
-        args.input_height = dm.size()[-1]
-
-        args.first_conv3x3 = True
-        args.remove_first_maxpool = True
-        normalization = cifar10_normalization()
-
-        train_transforms = transforms.Compose([
-            transforms.RandomCrop(32, padding=4, padding_mode="reflect"),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalization
-        ])
-
-        eval_transforms = transforms.Compose([
-            transforms.ToTensor(),
-            normalization
-        ])
-    elif args.dataset == 'stl10':
-        dm = STL10DataModule(
-            data_dir=args.data_path,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-        )
-
-        dm.train_dataloader = dm.train_dataloader_labeled
-        dm.val_dataloader = dm.val_dataloader_labeled
-        args.num_samples = dm.num_labeled_samples
-        args.input_height = dm.size()[-1]
-
-        args.first_conv3x3 = False  # first conv is 7x7 for stl-10
-        args.remove_first_maxpool = True  # we still remove maxpool1
-        normalization = stl10_normalization()
-
-        train_transforms = transforms.Compose([
-            transforms.RandomResizedCrop(96),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalization
-        ])
-
-        eval_transforms = transforms.Compose([
-            transforms.Resize(int(args.input_height * 1.1)),
-            transforms.CenterCrop(args.input_height),
-            transforms.ToTensor(),
-            normalization
-        ])
-    elif args.dataset == "imagenet":
-        dm = ImagenetDataModule(
-            data_dir=args.data_path,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-        )
-
-        args.num_samples = dm.num_samples
-        args.input_height = dm.size()[-1]
-
-        args.first_conv3x3 = False # first conv is 7x7 for imagenet
+        num_classes = 205
+        args.first_conv3x3 = False # first conv is 7x7 for places205
         args.remove_first_maxpool = False # don't remove first maxpool
-        normalization = imagenet_normalization()
+        normalization = places205_normalization()
 
-        train_transforms = transforms.Compose([
+        train_transform = transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalization
         ])
 
-        eval_transforms = transforms.Compose([
+        val_transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalization
         ])
+
+        train_dataset = Places205(img_dir=args.data_path, split='train', transform=train_transform)
+        val_dataset = Places205(img_dir=args.data_path, split='val', transform=val_transform)
+
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=True,
+        )
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=True,
+        )
     else:
         raise NotImplementedError("other datasets have not been implemented till now")
-
-    dm.train_transforms = train_transforms
-    dm.val_transforms = eval_transforms
-    dm.test_transforms = eval_transforms
 
     encoder = ENCODERS[args.encoder_name](first_conv3x3=args.first_conv3x3, remove_first_maxpool=args.remove_first_maxpool)
 
@@ -272,18 +200,13 @@ if __name__ == "__main__":
             encoder_dict[k.replace('encoder.', '')] = ckpt_model['state_dict'][k]
     encoder.load_state_dict(encoder_dict, strict=True)
 
-    linear_eval = LinearEvaluation(
+    classification_task = DownstreamClassificationEval(
         encoder=encoder,
         encoder_output_dim=args.encoder_output_dim,
-        num_classes=dm.num_classes,
-        num_samples=args.num_samples,
-        batch_size=args.batch_size,
-        gpus=args.gpus,
+        num_classes=num_classes,
         max_epochs=args.max_epochs,
         learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        nesterov=args.nesterov,
-        momentum=args.momentum,
+        milestones=args.milestones,
     )
 
     trainer = pl.Trainer(
@@ -291,8 +214,8 @@ if __name__ == "__main__":
         gpus=args.gpus,
         distributed_backend="ddp" if args.gpus > 1 else None,
         precision=16,
-        callbacks=[LearningRateMonitor(logging_interval="step")]
+        callbacks=[LearningRateMonitor(logging_interval="step")],
     )
 
-    trainer.fit(linear_eval, dm)
-    trainer.test(datamodule=dm)
+    trainer.fit(classification_task, train_loader)
+    trainer.test(test_dataloaders=val_loader)
